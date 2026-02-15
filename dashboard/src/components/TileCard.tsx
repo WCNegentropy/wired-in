@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useWiredInStore } from '../store';
+import { fetchFeed } from '../lib/api';
 import { getMockContent } from '../lib/mockData';
 import type { Tile, ContentItem, Platform } from '../types';
 import {
@@ -116,25 +117,34 @@ export default function TileCard({ tile }: TileCardProps) {
   const meta = platformMeta[tile.platform];
   const PlatformIcon = meta.icon;
 
-  // Load mock data on mount
+  const loadContent = useCallback(async () => {
+    setTileLoading(tile.id, true);
+    try {
+      const items = await fetchFeed(tile.platform, tile.config as Record<string, string>);
+      const contentItems = (items as ContentItem[]).slice(0, tile.config.maxItems ?? 10);
+      if (contentItems.length > 0) {
+        setTileContent(tile.id, contentItems);
+      } else {
+        // Fall back to mock data if API returns empty
+        setTileContent(tile.id, getMockContent(tile));
+      }
+    } catch {
+      // Fall back to mock data on error
+      setTileContent(tile.id, getMockContent(tile));
+    } finally {
+      setTileLoading(tile.id, false);
+    }
+  }, [tile.id, tile.platform, tile.config, setTileContent, setTileLoading]);
+
+  // Load live data on mount
   useEffect(() => {
     if (!content) {
-      setTileLoading(tile.id, true);
-      // Simulate network delay
-      const timer = setTimeout(() => {
-        setTileContent(tile.id, getMockContent(tile));
-        setTileLoading(tile.id, false);
-      }, 600 + Math.random() * 800);
-      return () => clearTimeout(timer);
+      loadContent();
     }
   }, [tile.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = () => {
-    setTileLoading(tile.id, true);
-    setTimeout(() => {
-      setTileContent(tile.id, getMockContent(tile));
-      setTileLoading(tile.id, false);
-    }, 500);
+    loadContent();
   };
 
   return (

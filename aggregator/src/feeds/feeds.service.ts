@@ -44,7 +44,7 @@ export class FeedsService {
     const cacheKey = `feed:${platform}`;
 
     // Check cache first
-    const cached = this.cacheService.get<ContentItem[]>(cacheKey);
+    const cached = await this.cacheService.get<ContentItem[]>(cacheKey);
     if (cached) {
       this.logger.debug(`Cache hit for platform: ${platform}`);
       return cached;
@@ -81,10 +81,10 @@ export class FeedsService {
       );
 
       // Cache the result
-      this.cacheService.set(cacheKey, normalized, ttl);
+      await this.cacheService.set(cacheKey, normalized, ttl);
 
       // Store in the content service for aggregation
-      this.contentService.setContentForPlatform(platform, normalized);
+      await this.contentService.setContentForPlatform(platform, normalized);
 
       // Emit event
       this.eventEmitter.emit('feed.fetched', {
@@ -136,7 +136,7 @@ export class FeedsService {
 
     // Invalidate cache for all platforms
     for (const platform of this.platforms) {
-      this.cacheService.delete(`feed:${platform.name}`);
+      await this.cacheService.delete(`feed:${platform.name}`);
     }
 
     // Fetch all feeds in parallel
