@@ -9,6 +9,7 @@ export interface Workspace {
 
 export interface Tile {
   id: string;
+  workspaceId?: string;
   platform: Platform;
   config: TileConfig;
   position: TilePosition;

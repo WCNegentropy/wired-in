@@ -146,3 +146,33 @@ pub struct HealthResponse {
 pub struct SubscribeRequest {
     pub callback_url: Option<String>,
 }
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RegisterRequest {
+    pub email: String,
+    pub password: String,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuthResponse {
+    pub token: String,
+    pub user: UserInfo,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserInfo {
+    pub id: Uuid,
+    pub email: String,
+    pub name: Option<String>,
+}

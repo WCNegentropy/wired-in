@@ -33,4 +33,8 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
   async delete(key: string): Promise<void> {
     await this.redis.del(key);
   }
+
+  async publish(channel: string, message: string): Promise<void> {
+    await this.redis.publish(channel, message);
+  }
 }

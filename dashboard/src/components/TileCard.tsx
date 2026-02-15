@@ -143,6 +143,15 @@ export default function TileCard({ tile }: TileCardProps) {
     }
   }, [tile.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-refresh timer
+  useEffect(() => {
+    if (tile.refreshIntervalSecs <= 0) return;
+    const interval = setInterval(() => {
+      loadContent();
+    }, tile.refreshIntervalSecs * 1000);
+    return () => clearInterval(interval);
+  }, [tile.refreshIntervalSecs, loadContent]);
+
   const handleRefresh = () => {
     loadContent();
   };

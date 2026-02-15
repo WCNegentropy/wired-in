@@ -11,6 +11,12 @@ pub async fn init_redis(redis_url: &str) -> ConnectionManager {
     conn
 }
 
+pub async fn create_pubsub(redis_url: &str) -> Result<redis::aio::PubSub, redis::RedisError> {
+    let client = redis::Client::open(redis_url)?;
+    let conn = client.get_async_connection().await?;
+    Ok(conn.into_pubsub())
+}
+
 pub async fn get_cached(conn: &mut ConnectionManager, key: &str) -> Option<String> {
     let result: Option<String> = conn.get(key).await.ok()?;
     result

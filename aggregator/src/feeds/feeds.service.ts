@@ -86,6 +86,12 @@ export class FeedsService {
       // Store in the content service for aggregation
       await this.contentService.setContentForPlatform(platform, normalized);
 
+      // Publish to Redis for SSE subscribers
+      await this.cacheService.publish(
+        `feed:updates:${platform}`,
+        JSON.stringify({ platform, items: normalized, timestamp: new Date().toISOString() }),
+      );
+
       // Emit event
       this.eventEmitter.emit('feed.fetched', {
         platform,

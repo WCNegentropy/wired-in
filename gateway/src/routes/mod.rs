@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod helpers;
 pub mod proxy;
 pub mod stream;
@@ -10,6 +11,12 @@ use actix_web::web;
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
+            // Auth routes
+            .service(
+                web::scope("/auth")
+                    .service(auth::register)
+                    .service(auth::login),
+            )
             // Proxy routes (feeds, content, search)
             .service(proxy::get_feeds)
             .service(proxy::get_content)

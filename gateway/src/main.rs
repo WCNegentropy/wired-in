@@ -1,5 +1,7 @@
+mod auth;
 mod cache;
 mod db;
+mod middleware;
 mod models;
 mod routes;
 mod state;

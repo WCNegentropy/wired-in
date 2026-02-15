@@ -3,6 +3,7 @@ use log::info;
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::middleware::AuthenticatedUser;
 use crate::models::{ApiResponse, CreateTileRequest, Tile, UpdateTileRequest};
 use crate::state::AppState;
 use super::helpers::tile_from_row;
@@ -11,14 +12,16 @@ use super::helpers::tile_from_row;
 #[get("/workspaces/{workspace_id}/tiles")]
 pub async fn list_tiles(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let workspace_id = path.into_inner();
 
     let rows = sqlx::query(
-        "SELECT id, workspace_id, platform, config, position_x, position_y, position_w, position_h, refresh_interval_secs FROM tiles WHERE workspace_id = $1 ORDER BY created_at",
+        "SELECT t.id, t.workspace_id, t.platform, t.config, t.position_x, t.position_y, t.position_w, t.position_h, t.refresh_interval_secs FROM tiles t INNER JOIN workspaces w ON t.workspace_id = w.id WHERE t.workspace_id = $1 AND w.user_id = $2 ORDER BY t.created_at",
     )
     .bind(workspace_id)
+    .bind(user.user_id)
     .fetch_all(&state.db)
     .await;
 
@@ -37,16 +40,18 @@ pub async fn list_tiles(
 #[post("/workspaces/{workspace_id}/tiles")]
 pub async fn create_tile(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
     body: web::Json<CreateTileRequest>,
 ) -> HttpResponse {
     let workspace_id = path.into_inner();
 
-    // Verify the workspace exists.
+    // Verify the workspace exists and belongs to the user.
     let ws_exists: Result<Option<bool>, _> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM workspaces WHERE id = $1)",
+        "SELECT EXISTS(SELECT 1 FROM workspaces WHERE id = $1 AND user_id = $2)",
     )
     .bind(workspace_id)
+    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await;
 
@@ -120,16 +125,18 @@ pub async fn create_tile(
 #[put("/tiles/{id}")]
 pub async fn update_tile(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
     body: web::Json<UpdateTileRequest>,
 ) -> HttpResponse {
     let id = path.into_inner();
 
-    // Fetch current tile
+    // Fetch current tile, verifying ownership through workspace
     let existing = sqlx::query(
-        "SELECT id, workspace_id, platform, config, position_x, position_y, position_w, position_h, refresh_interval_secs FROM tiles WHERE id = $1",
+        "SELECT t.id, t.workspace_id, t.platform, t.config, t.position_x, t.position_y, t.position_w, t.position_h, t.refresh_interval_secs FROM tiles t WHERE t.id = $1 AND t.workspace_id IN (SELECT id FROM workspaces WHERE user_id = $2)",
     )
     .bind(id)
+    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await;
 
@@ -195,13 +202,17 @@ pub async fn update_tile(
 #[delete("/tiles/{id}")]
 pub async fn delete_tile(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let id = path.into_inner();
-    let result = sqlx::query("DELETE FROM tiles WHERE id = $1")
-        .bind(id)
-        .execute(&state.db)
-        .await;
+    let result = sqlx::query(
+        "DELETE FROM tiles WHERE id = $1 AND workspace_id IN (SELECT id FROM workspaces WHERE user_id = $2)",
+    )
+    .bind(id)
+    .bind(user.user_id)
+    .execute(&state.db)
+    .await;
 
     match result {
         Ok(r) if r.rows_affected() > 0 => {
