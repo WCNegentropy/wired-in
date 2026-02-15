@@ -1,62 +1,95 @@
 # wired-in-aggregator
 
-![TypeScript](https://img.shields.io/badge/TypeScript-blue) ![nestjs](https://img.shields.io/badge/nestjs-green) ![postgres](https://img.shields.io/badge/postgres-orange)
+![TypeScript](https://img.shields.io/badge/TypeScript-blue) ![nestjs](https://img.shields.io/badge/nestjs-green)
 
-A backend api built with TypeScript and nestjs.
+Data normalization, caching, and aggregation layer for the Wired-In platform. Sits between the gateway and the workers service — fetches raw platform feeds, normalizes content into a unified format, caches results with TTL, and provides aggregated content endpoints with filtering, sorting, and search.
 
 ## Tech Stack
 
 - **Language:** TypeScript
-- **Framework:** nestjs
-- **Database:** postgres
-- **Runtime:** node
+- **Framework:** NestJS
+- **Caching:** Custom in-memory TTL cache (with cron-based expiry cleanup)
+- **Database:** TypeORM + Postgres configured (entities exist but primary data flow uses in-memory stores)
+- **Runtime:** Node.js
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/content` | Aggregated content from all platforms (supports filtering & sorting) |
+| `GET` | `/api/content/search` | Search across all platform content |
+| `GET` | `/api/content/:platform` | Content for a specific platform |
+| `GET` | `/api/feeds/platforms` | List available platforms |
+| `GET` | `/api/feeds/:platform` | Fetch feed from a specific platform |
+| `GET` | `/api/feeds/:platform/search` | Search within a platform feed |
+| `POST` | `/api/feeds/refresh` | Force refresh all feeds |
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 20+
-- pnpm 8+
+- npm or pnpm
 
 ### Installation
 
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
 # Run development server
-pnpm dev
+npm run start:dev
 
 # Build for production
-pnpm build
+npm run build
 
 # Run tests
-pnpm test
+npm test
 ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `4000` | Server port |
+| `WORKERS_URL` | `http://localhost:8000` | Workers service URL |
+| `DATABASE_URL` | — | Postgres connection string |
 
 ## Project Structure
 
 ```
-wired-in-aggregator/
+aggregator/
 ├── src/
-│   └── index.ts
+│   ├── main.ts                          # App bootstrap
+│   ├── app.module.ts                    # Root module
+│   ├── app.controller.ts               # Root controller (health, info)
+│   ├── app.service.ts                   # Root service
+│   ├── dto/
+│   │   └── content-query.dto.ts         # Query parameter DTOs
+│   ├── entities/
+│   │   ├── user.entity.ts               # User TypeORM entity
+│   │   └── content-item.entity.ts       # ContentItem TypeORM entity
+│   ├── content/
+│   │   ├── content.module.ts            # Content module
+│   │   ├── content.controller.ts        # Content endpoints
+│   │   └── content.service.ts           # Content normalization & aggregation
+│   ├── feeds/
+│   │   ├── feeds.module.ts              # Feeds module
+│   │   ├── feeds.controller.ts          # Feed endpoints
+│   │   └── feeds.service.ts             # Feed fetching, caching, events
+│   └── cache/
+│       ├── cache.module.ts              # Cache module
+│       └── cache.service.ts             # In-memory TTL cache with cron cleanup
 ├── package.json
 ├── tsconfig.json
+├── Dockerfile
 └── README.md
 ```
 
-## Development
-
-### Database
-
-This project uses postgres. Make sure you have it running locally or update the connection string in your environment variables.
-
-### Docker
-
-You can run this project using Docker:
+## Docker
 
 ```bash
-docker-compose up
+docker compose up
 ```
 
 ## License
