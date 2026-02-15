@@ -1,4 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ContentItemEntity } from '../entities/content-item.entity';
 
 export interface ContentItem {
   id: string;
@@ -26,9 +29,34 @@ export interface AggregateOptions {
 }
 
 @Injectable()
-export class ContentService {
+export class ContentService implements OnModuleInit {
   private readonly logger = new Logger(ContentService.name);
   private readonly contentStore = new Map<string, ContentItem[]>();
+
+  constructor(
+    @InjectRepository(ContentItemEntity)
+    private readonly contentRepo: Repository<ContentItemEntity>,
+  ) {}
+
+  /**
+   * On startup, hydrate the in-memory content store from the database
+   * so the system has warm data immediately.
+   */
+  async onModuleInit() {
+    try {
+      const items = await this.contentRepo.find();
+      for (const item of items) {
+        const existing = this.contentStore.get(item.platform) ?? [];
+        existing.push(this.entityToContentItem(item));
+        this.contentStore.set(item.platform, existing);
+      }
+      this.logger.log(`Hydrated ${items.length} content items from database`);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to hydrate content from database: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
   /**
    * Combine content from all platforms, apply filters and sorting.
@@ -130,12 +158,40 @@ export class ContentService {
 
   /**
    * Store normalized content for a given platform.
+   * Uses write-through pattern: updates in-memory store and persists to DB.
    */
-  setContentForPlatform(platform: string, items: ContentItem[]): void {
+  async setContentForPlatform(platform: string, items: ContentItem[]): Promise<void> {
     this.contentStore.set(platform, items);
     this.logger.log(
       `Stored ${items.length} content items for platform: ${platform}`,
     );
+
+    // Persist to DB (upsert by id)
+    try {
+      const entities = items.map((item) => ({
+        id: item.id,
+        platform,
+        contentType: item.contentType,
+        title: item.title,
+        description: item.description ?? undefined,
+        url: item.url,
+        thumbnailUrl: item.thumbnailUrl ?? undefined,
+        author: item.author,
+        authorUrl: item.authorUrl ?? undefined,
+        score: item.score ?? undefined,
+        commentCount: item.commentCount ?? undefined,
+        publishedAt: item.publishedAt,
+        fetchedAt: item.fetchedAt,
+        metadata: item.metadata ?? undefined,
+      }));
+      if (entities.length > 0) {
+        await this.contentRepo.upsert(entities, ['id']);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist content to database: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**
@@ -192,5 +248,24 @@ export class ContentService {
     if (item.author.toLowerCase().includes(query)) score += 3;
     score += item.score ?? 0;
     return score;
+  }
+
+  private entityToContentItem(entity: ContentItemEntity): ContentItem {
+    return {
+      id: entity.id,
+      platform: entity.platform,
+      contentType: entity.contentType,
+      title: entity.title,
+      description: entity.description,
+      url: entity.url,
+      thumbnailUrl: entity.thumbnailUrl,
+      author: entity.author,
+      authorUrl: entity.authorUrl,
+      score: entity.score,
+      commentCount: entity.commentCount,
+      publishedAt: entity.publishedAt,
+      fetchedAt: entity.fetchedAt,
+      metadata: entity.metadata,
+    };
   }
 }

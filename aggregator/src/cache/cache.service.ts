@@ -1,67 +1,36 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
-
-interface CacheEntry<T> {
-  data: T;
-  expiresAt: number;
-}
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 
 @Injectable()
-export class CacheService {
+export class CacheService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CacheService.name);
-  private readonly store = new Map<string, CacheEntry<unknown>>();
+  private redis: Redis;
 
-  get<T>(key: string): T | null {
-    const entry = this.store.get(key) as CacheEntry<T> | undefined;
-    if (!entry) {
-      return null;
-    }
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return null;
-    }
-    return entry.data;
+  constructor(private readonly configService: ConfigService) {}
+
+  onModuleInit() {
+    const redisUrl = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+    this.redis = new Redis(redisUrl);
+    this.redis.on('connect', () => this.logger.log('Connected to Redis'));
+    this.redis.on('error', (err) => this.logger.error('Redis error', err));
   }
 
-  set<T>(key: string, value: T, ttlSeconds: number): void {
-    this.store.set(key, {
-      data: value,
-      expiresAt: Date.now() + ttlSeconds * 1000,
-    });
+  onModuleDestroy() {
+    this.redis?.disconnect();
   }
 
-  delete(key: string): void {
-    this.store.delete(key);
+  async get<T>(key: string): Promise<T | null> {
+    const raw = await this.redis.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
   }
 
-  clear(): void {
-    this.store.clear();
+  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+    await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
   }
 
-  has(key: string): boolean {
-    const entry = this.store.get(key);
-    if (!entry) {
-      return false;
-    }
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return false;
-    }
-    return true;
-  }
-
-  @Cron(CronExpression.EVERY_MINUTE)
-  handleExpiredEntries(): void {
-    const now = Date.now();
-    let cleaned = 0;
-    for (const [key, entry] of this.store.entries()) {
-      if (now > entry.expiresAt) {
-        this.store.delete(key);
-        cleaned++;
-      }
-    }
-    if (cleaned > 0) {
-      this.logger.debug(`Cleaned ${cleaned} expired cache entries`);
-    }
+  async delete(key: string): Promise<void> {
+    await this.redis.del(key);
   }
 }
