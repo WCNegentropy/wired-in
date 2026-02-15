@@ -3,7 +3,5 @@ version: '3.8'
 services:
   app:
     build: .
-    ports:
-      - "3000:3000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - WIREDIN_GATEWAY_URL=http://localhost:8080

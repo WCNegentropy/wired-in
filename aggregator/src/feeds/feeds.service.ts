@@ -12,10 +12,10 @@ interface PlatformConfig {
 
 const DEFAULT_PLATFORMS: PlatformConfig[] = [
   { name: 'reddit', endpoint: '/api/feeds/reddit', cacheTtl: 300 },
-  { name: 'hackernews', endpoint: '/api/feeds/hackernews', cacheTtl: 300 },
-  { name: 'github', endpoint: '/api/feeds/github', cacheTtl: 600 },
-  { name: 'devto', endpoint: '/api/feeds/devto', cacheTtl: 300 },
-  { name: 'producthunt', endpoint: '/api/feeds/producthunt', cacheTtl: 600 },
+  { name: 'youtube', endpoint: '/api/feeds/youtube', cacheTtl: 300 },
+  { name: 'x', endpoint: '/api/feeds/x', cacheTtl: 300 },
+  { name: 'rss', endpoint: '/api/feeds/rss', cacheTtl: 300 },
+  { name: 'news', endpoint: '/api/feeds/news', cacheTtl: 600 },
 ];
 
 @Injectable()

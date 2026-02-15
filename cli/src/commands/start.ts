@@ -24,11 +24,11 @@ export function startCommand(program: Command): void {
         console.log('    # Gateway only');
         console.log('    docker compose up gateway');
         console.log('');
-        console.log('    # Frontend with hot reload');
-        console.log('    cd frontend && npm run dev');
+        console.log('    # Dashboard with hot reload');
+        console.log('    cd dashboard && npm run dev');
         console.log('');
         console.log('    # Run tests');
-        console.log('    docker compose run --rm gateway npm test');
+        console.log('    docker compose run --rm workers pytest');
         console.log('');
       } else {
         console.log('  Wired-In — Start');
