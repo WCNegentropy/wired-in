@@ -1,17 +1,45 @@
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use chrono::Utc;
 use log::info;
+use sqlx::Row;
 use uuid::Uuid;
 
-use crate::models::{ApiResponse, CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace};
+use crate::models::{
+    ApiResponse, CreateWorkspaceRequest, Platform, Tile, TileConfig, TilePosition,
+    UpdateWorkspaceRequest, Workspace,
+};
 use crate::state::AppState;
 
 /// GET /api/workspaces
 #[get("/workspaces")]
 pub async fn list_workspaces(state: web::Data<AppState>) -> HttpResponse {
-    let workspaces = state.workspaces.lock().unwrap().clone();
-    info!("Listing {} workspaces", workspaces.len());
-    HttpResponse::Ok().json(ApiResponse::ok(workspaces))
+    let rows = sqlx::query(
+        "SELECT id, name, description, created_at, updated_at FROM workspaces ORDER BY created_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await;
+
+    match rows {
+        Ok(rows) => {
+            let workspaces: Vec<Workspace> = rows
+                .iter()
+                .map(|r| Workspace {
+                    id: r.get("id"),
+                    name: r.get("name"),
+                    description: r.get("description"),
+                    tiles: Vec::new(),
+                    created_at: r.get("created_at"),
+                    updated_at: r.get("updated_at"),
+                })
+                .collect();
+            info!("Listing {} workspaces", workspaces.len());
+            HttpResponse::Ok().json(ApiResponse::ok(workspaces))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError()
+                .json(ApiResponse::<()>::err(format!("Database error: {e}")))
+        }
+    }
 }
 
 /// POST /api/workspaces
@@ -20,20 +48,38 @@ pub async fn create_workspace(
     state: web::Data<AppState>,
     body: web::Json<CreateWorkspaceRequest>,
 ) -> HttpResponse {
+    let id = Uuid::new_v4();
     let now = Utc::now();
-    let workspace = Workspace {
-        id: Uuid::new_v4(),
-        name: body.name.clone(),
-        description: body.description.clone(),
-        tiles: Vec::new(),
-        created_at: now,
-        updated_at: now,
-    };
 
-    info!("Creating workspace: {} ({})", workspace.name, workspace.id);
-    state.workspaces.lock().unwrap().push(workspace.clone());
+    let result = sqlx::query(
+        "INSERT INTO workspaces (id, name, description, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(id)
+    .bind(&body.name)
+    .bind(&body.description)
+    .bind(now)
+    .bind(now)
+    .execute(&state.db)
+    .await;
 
-    HttpResponse::Created().json(ApiResponse::ok(workspace))
+    match result {
+        Ok(_) => {
+            info!("Creating workspace: {} ({})", body.name, id);
+            let workspace = Workspace {
+                id,
+                name: body.name.clone(),
+                description: body.description.clone(),
+                tiles: Vec::new(),
+                created_at: now,
+                updated_at: now,
+            };
+            HttpResponse::Created().json(ApiResponse::ok(workspace))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError()
+                .json(ApiResponse::<()>::err(format!("Database error: {e}")))
+        }
+    }
 }
 
 /// GET /api/workspaces/{id}
@@ -44,20 +90,43 @@ pub async fn get_workspace(
 ) -> HttpResponse {
     let id = path.into_inner();
 
-    let ws = {
-        let workspaces = state.workspaces.lock().unwrap();
-        workspaces.iter().find(|w| w.id == id).cloned()
-    }; // workspaces lock released here
+    let ws_row = sqlx::query(
+        "SELECT id, name, description, created_at, updated_at FROM workspaces WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await;
 
-    match ws {
-        Some(mut ws) => {
-            // Attach the workspace's tiles from the tile store.
-            let tiles = state.tiles.lock().unwrap();
-            ws.tiles = tiles.iter().filter(|t| t.workspace_id == id).cloned().collect();
+    match ws_row {
+        Ok(Some(row)) => {
+            let mut ws = Workspace {
+                id: row.get("id"),
+                name: row.get("name"),
+                description: row.get("description"),
+                tiles: Vec::new(),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            };
+
+            // Load tiles for this workspace
+            let tile_rows = sqlx::query(
+                "SELECT id, workspace_id, platform, config, position_x, position_y, position_w, position_h, refresh_interval_secs FROM tiles WHERE workspace_id = $1",
+            )
+            .bind(id)
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
+
+            ws.tiles = tile_rows
+                .iter()
+                .filter_map(|r| tile_from_row(r).ok())
+                .collect();
             HttpResponse::Ok().json(ApiResponse::ok(ws))
         }
-        None => HttpResponse::NotFound()
+        Ok(None) => HttpResponse::NotFound()
             .json(ApiResponse::<()>::err(format!("Workspace {id} not found"))),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
     }
 }
 
@@ -69,24 +138,40 @@ pub async fn update_workspace(
     body: web::Json<UpdateWorkspaceRequest>,
 ) -> HttpResponse {
     let id = path.into_inner();
-    let mut workspaces = state.workspaces.lock().unwrap();
+    let now = Utc::now();
 
-    match workspaces.iter_mut().find(|w| w.id == id) {
-        Some(ws) => {
-            if let Some(ref name) = body.name {
-                ws.name = name.clone();
-            }
-            if let Some(ref desc) = body.description {
-                ws.description = Some(desc.clone());
-            }
-            ws.updated_at = Utc::now();
+    let result = sqlx::query(
+        r#"UPDATE workspaces
+           SET name = COALESCE($2, name),
+               description = COALESCE($3, description),
+               updated_at = $4
+           WHERE id = $1
+           RETURNING id, name, description, created_at, updated_at"#,
+    )
+    .bind(id)
+    .bind(&body.name)
+    .bind(&body.description)
+    .bind(now)
+    .fetch_optional(&state.db)
+    .await;
 
+    match result {
+        Ok(Some(row)) => {
             info!("Updated workspace {}", id);
-            let ws = ws.clone();
+            let ws = Workspace {
+                id: row.get("id"),
+                name: row.get("name"),
+                description: row.get("description"),
+                tiles: Vec::new(),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            };
             HttpResponse::Ok().json(ApiResponse::ok(ws))
         }
-        None => HttpResponse::NotFound()
+        Ok(None) => HttpResponse::NotFound()
             .json(ApiResponse::<()>::err(format!("Workspace {id} not found"))),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
     }
 }
 
@@ -98,21 +183,44 @@ pub async fn delete_workspace(
 ) -> HttpResponse {
     let id = path.into_inner();
 
-    let found = {
-        let mut workspaces = state.workspaces.lock().unwrap();
-        let len_before = workspaces.len();
-        workspaces.retain(|w| w.id != id);
-        workspaces.len() < len_before
-    }; // workspaces lock released here
+    let result = sqlx::query("DELETE FROM workspaces WHERE id = $1")
+        .bind(id)
+        .execute(&state.db)
+        .await;
 
-    if found {
-        // Remove associated tiles (separate lock scope).
-        state.tiles.lock().unwrap().retain(|t| t.workspace_id != id);
-
-        info!("Deleted workspace {}", id);
-        HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "deleted": id })))
-    } else {
-        HttpResponse::NotFound()
-            .json(ApiResponse::<()>::err(format!("Workspace {id} not found")))
+    match result {
+        Ok(r) if r.rows_affected() > 0 => {
+            info!("Deleted workspace {}", id);
+            HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "deleted": id })))
+        }
+        Ok(_) => HttpResponse::NotFound()
+            .json(ApiResponse::<()>::err(format!("Workspace {id} not found"))),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
     }
+}
+
+// ── Helper to convert a sqlx Row into a Tile ──────────────────────
+
+fn tile_from_row(row: &sqlx::postgres::PgRow) -> Result<Tile, String> {
+    let platform_str: String = row.get("platform");
+    let platform: Platform =
+        serde_json::from_value(serde_json::Value::String(platform_str.clone()))
+            .map_err(|_| format!("Unknown platform: {}", platform_str))?;
+
+    Ok(Tile {
+        id: row.get("id"),
+        workspace_id: row.get("workspace_id"),
+        platform,
+        config: TileConfig {
+            extra: row.get("config"),
+        },
+        position: TilePosition {
+            x: row.get("position_x"),
+            y: row.get("position_y"),
+            w: row.get("position_w"),
+            h: row.get("position_h"),
+        },
+        refresh_interval_secs: row.get::<i64, _>("refresh_interval_secs") as u64,
+    })
 }

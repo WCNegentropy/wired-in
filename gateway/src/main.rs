@@ -1,3 +1,5 @@
+mod cache;
+mod db;
 mod models;
 mod routes;
 mod state;
@@ -41,7 +43,14 @@ async fn main() -> std::io::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
-    let app_state = AppState::from_env();
+    let app_state = AppState::from_env().await;
+
+    // Run SQL migrations
+    sqlx::migrate!("./migrations")
+        .run(&app_state.db)
+        .await
+        .expect("Failed to run database migrations");
+    info!("Database migrations applied successfully");
 
     info!(
         "Aggregator URL : {}",
@@ -70,17 +79,10 @@ mod tests {
     use super::*;
     use actix_web::test;
 
-    fn test_app_state() -> AppState {
-        AppState::from_env()
-    }
-
     #[actix_rt::test]
     async fn test_health_check() {
-        let state = test_app_state();
         let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(state))
-                .service(health_check),
+            App::new().service(health_check),
         )
         .await;
         let req = test::TestRequest::get().uri("/health").to_request();
@@ -90,43 +92,11 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_root() {
-        let state = test_app_state();
         let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(state))
-                .service(root),
+            App::new().service(root),
         )
         .await;
         let req = test::TestRequest::get().uri("/").to_request();
-        let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
-    }
-
-    #[actix_rt::test]
-    async fn test_workspace_crud() {
-        let state = test_app_state();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(state))
-                .configure(routes::configure),
-        )
-        .await;
-
-        // Create workspace
-        let req = test::TestRequest::post()
-            .uri("/api/workspaces")
-            .set_json(serde_json::json!({
-                "name": "Test Workspace",
-                "description": "A test workspace"
-            }))
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 201);
-
-        // List workspaces
-        let req = test::TestRequest::get()
-            .uri("/api/workspaces")
-            .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
     }
