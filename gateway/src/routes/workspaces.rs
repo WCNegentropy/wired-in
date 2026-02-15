@@ -4,11 +4,9 @@ use log::info;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::models::{
-    ApiResponse, CreateWorkspaceRequest, Platform, Tile, TileConfig, TilePosition,
-    UpdateWorkspaceRequest, Workspace,
-};
+use crate::models::{ApiResponse, CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace};
 use crate::state::AppState;
+use super::helpers::tile_from_row;
 
 /// GET /api/workspaces
 #[get("/workspaces")]
@@ -114,14 +112,19 @@ pub async fn get_workspace(
             )
             .bind(id)
             .fetch_all(&state.db)
-            .await
-            .unwrap_or_default();
+            .await;
 
-            ws.tiles = tile_rows
-                .iter()
-                .filter_map(|r| tile_from_row(r).ok())
-                .collect();
-            HttpResponse::Ok().json(ApiResponse::ok(ws))
+            match tile_rows {
+                Ok(rows) => {
+                    ws.tiles = rows
+                        .iter()
+                        .filter_map(|r| tile_from_row(r).ok())
+                        .collect();
+                    HttpResponse::Ok().json(ApiResponse::ok(ws))
+                }
+                Err(e) => HttpResponse::InternalServerError()
+                    .json(ApiResponse::<()>::err(format!("Database error loading tiles: {e}"))),
+            }
         }
         Ok(None) => HttpResponse::NotFound()
             .json(ApiResponse::<()>::err(format!("Workspace {id} not found"))),
@@ -198,29 +201,4 @@ pub async fn delete_workspace(
         Err(e) => HttpResponse::InternalServerError()
             .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
     }
-}
-
-// ── Helper to convert a sqlx Row into a Tile ──────────────────────
-
-fn tile_from_row(row: &sqlx::postgres::PgRow) -> Result<Tile, String> {
-    let platform_str: String = row.get("platform");
-    let platform: Platform =
-        serde_json::from_value(serde_json::Value::String(platform_str.clone()))
-            .map_err(|_| format!("Unknown platform: {}", platform_str))?;
-
-    Ok(Tile {
-        id: row.get("id"),
-        workspace_id: row.get("workspace_id"),
-        platform,
-        config: TileConfig {
-            extra: row.get("config"),
-        },
-        position: TilePosition {
-            x: row.get("position_x"),
-            y: row.get("position_y"),
-            w: row.get("position_w"),
-            h: row.get("position_h"),
-        },
-        refresh_interval_secs: row.get::<i64, _>("refresh_interval_secs") as u64,
-    })
 }

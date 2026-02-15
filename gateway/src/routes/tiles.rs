@@ -3,10 +3,9 @@ use log::info;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::models::{
-    ApiResponse, CreateTileRequest, Platform, Tile, TileConfig, TilePosition, UpdateTileRequest,
-};
+use crate::models::{ApiResponse, CreateTileRequest, Tile, UpdateTileRequest};
 use crate::state::AppState;
+use super::helpers::tile_from_row;
 
 /// GET /api/workspaces/{workspace_id}/tiles
 #[get("/workspaces/{workspace_id}/tiles")]
@@ -65,10 +64,19 @@ pub async fn create_tile(
     }
 
     let id = Uuid::new_v4();
-    let platform_str = serde_json::to_value(&body.platform)
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "reddit".to_string());
+    let platform_str = match serde_json::to_value(&body.platform) {
+        Ok(v) => match v.as_str() {
+            Some(s) => s.to_string(),
+            None => {
+                return HttpResponse::BadRequest()
+                    .json(ApiResponse::<()>::err("Invalid platform value"));
+            }
+        },
+        Err(_) => {
+            return HttpResponse::BadRequest()
+                .json(ApiResponse::<()>::err("Failed to serialize platform"));
+        }
+    };
     let config_json = serde_json::to_value(&body.config.extra).unwrap_or_default();
 
     let result = sqlx::query(
@@ -206,29 +214,4 @@ pub async fn delete_tile(
         Err(e) => HttpResponse::InternalServerError()
             .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
     }
-}
-
-// ── Helper to convert a sqlx Row into a Tile ──────────────────────
-
-fn tile_from_row(row: &sqlx::postgres::PgRow) -> Result<Tile, String> {
-    let platform_str: String = row.get("platform");
-    let platform: Platform =
-        serde_json::from_value(serde_json::Value::String(platform_str.clone()))
-            .map_err(|_| format!("Unknown platform: {}", platform_str))?;
-
-    Ok(Tile {
-        id: row.get("id"),
-        workspace_id: row.get("workspace_id"),
-        platform,
-        config: TileConfig {
-            extra: row.get("config"),
-        },
-        position: TilePosition {
-            x: row.get("position_x"),
-            y: row.get("position_y"),
-            w: row.get("position_w"),
-            h: row.get("position_h"),
-        },
-        refresh_interval_secs: row.get::<i64, _>("refresh_interval_secs") as u64,
-    })
 }
