@@ -215,8 +215,8 @@ export async function fetchFeed(platform: string, config: Record<string, string>
   const res = await fetch(`${GATEWAY_URL}/api/feeds/${platform}?${params}`);
   if (!res.ok) throw new Error(`Failed to fetch ${platform} feed`);
   const data = await res.json();
-  const items = data.items ?? data;
-  return Array.isArray(items) ? (items as unknown[]).map((item) => fromApi(item)) : items;
+  const items = data.items ?? data.data ?? data;
+  return Array.isArray(items) ? (items as unknown[]).map((item) => fromApi(item)) : [];
 }
 
 export async function searchPlatform(platform: string, query: string): Promise<unknown[]> {

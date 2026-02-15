@@ -53,15 +53,10 @@ pub async fn event_stream(
                         msg = messages.next() => {
                             match msg {
                                 Some(msg) => {
-                                    let payload: String = match redis::from_redis_value(&msg.get_payload_bytes().into()) {
-                                        Ok(s) => s,
-                                        Err(_) => match msg.get_payload::<String>() {
-                                            Ok(s) => s,
-                                            Err(_) => continue,
-                                        }
-                                    };
-                                    let data = format!("event: content\ndata: {}\n\n", payload);
-                                    yield Ok::<_, actix_web::Error>(bytes::Bytes::from(data));
+                                    if let Ok(payload) = msg.get_payload::<String>() {
+                                        let data = format!("event: content\ndata: {}\n\n", payload);
+                                        yield Ok::<_, actix_web::Error>(bytes::Bytes::from(data));
+                                    }
                                 }
                                 None => break,
                             }
