@@ -35,6 +35,10 @@ class YouTubeWorker(PlatformWorker):
 
     # ----- helpers -----------------------------------------------------------
 
+    def _resolve_api_key(self, config: dict) -> Optional[str]:
+        """Return the API key from config (per-request header) or fall back to env var."""
+        return config.get("api_key") or self._api_key
+
     @property
     def _has_api_key(self) -> bool:
         return bool(self._api_key)
@@ -155,13 +159,14 @@ class YouTubeWorker(PlatformWorker):
         order: str = config.get("order", "date")
 
         # ---- API mode ----
-        if self._has_api_key:
+        resolved_key = self._resolve_api_key(config)
+        if resolved_key:
             params: dict = {
                 "part": "snippet",
                 "maxResults": max_results,
                 "order": order,
                 "type": "video",
-                "key": self._api_key,
+                "key": resolved_key,
             }
             if channel_id:
                 params["channelId"] = channel_id
@@ -186,7 +191,7 @@ class YouTubeWorker(PlatformWorker):
 
         logger.warning(
             "YouTube worker: no API key and no channel_id provided. "
-            "Set YOUTUBE_API_KEY or supply a channel_id for RSS fallback."
+            "Configure YOUTUBE_API_KEY, add an API key in settings, or supply a channel_id for RSS fallback."
         )
         return []
 
@@ -196,9 +201,11 @@ class YouTubeWorker(PlatformWorker):
         Keyword args:
             max_results (int): Max results. Default 15.
             order (str): Sorting. Default "relevance".
+            api_key (str): Per-request API key from gateway.
         """
-        if not self._has_api_key:
-            logger.warning("YouTube search requires YOUTUBE_API_KEY; returning empty results.")
+        resolved_key = kwargs.get("api_key") or self._api_key
+        if not resolved_key:
+            logger.warning("YouTube search requires an API key; returning empty results.")
             return []
 
         max_results = min(int(kwargs.get("max_results", 15)), 50)
@@ -210,7 +217,7 @@ class YouTubeWorker(PlatformWorker):
             "maxResults": max_results,
             "order": order,
             "type": "video",
-            "key": self._api_key,
+            "key": resolved_key,
         }
 
         try:

@@ -85,6 +85,11 @@ function ContentItemCard({ item }: { item: ContentItem }) {
               <MessageSquare size={12} /> {formatNumber(item.commentCount)}
             </span>
           )}
+          {item.metadata?.crossPostedFrom && Array.isArray(item.metadata.crossPostedFrom) && item.metadata.crossPostedFrom.length > 0 && (
+            <span className="cross-platform-badge">
+              Also on {(item.metadata.crossPostedFrom as string[]).join(', ')}
+            </span>
+          )}
           <ExternalLink size={12} className="content-item__link-icon" />
         </div>
       </div>

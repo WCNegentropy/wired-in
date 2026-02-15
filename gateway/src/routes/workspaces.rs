@@ -5,7 +5,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::middleware::AuthenticatedUser;
-use crate::models::{ApiResponse, CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace};
+use crate::models::{ApiResponse, BatchTilePositionRequest, CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace};
 use crate::state::AppState;
 use super::helpers::tile_from_row;
 
@@ -213,5 +213,83 @@ pub async fn delete_workspace(
             .json(ApiResponse::<()>::err(format!("Workspace {id} not found"))),
         Err(e) => HttpResponse::InternalServerError()
             .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
+    }
+}
+
+/// PUT /api/workspaces/{id}/tile-positions
+/// Batch update tile positions in a single transaction.
+#[put("/workspaces/{id}/tile-positions")]
+pub async fn batch_update_tile_positions(
+    state: web::Data<AppState>,
+    user: AuthenticatedUser,
+    path: web::Path<Uuid>,
+    body: web::Json<BatchTilePositionRequest>,
+) -> HttpResponse {
+    let workspace_id = path.into_inner();
+
+    // Verify workspace ownership
+    let ws_exists: Result<Option<bool>, _> = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM workspaces WHERE id = $1 AND user_id = $2)",
+    )
+    .bind(workspace_id)
+    .bind(user.user_id)
+    .fetch_optional(&state.db)
+    .await;
+
+    match ws_exists {
+        Ok(Some(false)) | Ok(None) => {
+            return HttpResponse::NotFound().json(ApiResponse::<()>::err(format!(
+                "Workspace {workspace_id} not found"
+            )));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(ApiResponse::<()>::err(format!("Database error: {e}")));
+        }
+        _ => {}
+    }
+
+    // Update each tile position in a transaction
+    let mut tx = match state.db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(ApiResponse::<()>::err(format!("Transaction error: {e}")));
+        }
+    };
+
+    for pos in &body.positions {
+        let result = sqlx::query(
+            "UPDATE tiles SET position_x = $2, position_y = $3, position_w = $4, position_h = $5 WHERE id = $1 AND workspace_id = $6",
+        )
+        .bind(pos.tile_id)
+        .bind(pos.x)
+        .bind(pos.y)
+        .bind(pos.w)
+        .bind(pos.h)
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await;
+
+        if let Err(e) = result {
+            let _ = tx.rollback().await;
+            return HttpResponse::InternalServerError()
+                .json(ApiResponse::<()>::err(format!("Database error: {e}")));
+        }
+    }
+
+    match tx.commit().await {
+        Ok(_) => {
+            info!(
+                "Batch updated {} tile positions for workspace {}",
+                body.positions.len(),
+                workspace_id
+            );
+            HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
+                "updated": body.positions.len()
+            })))
+        }
+        Err(e) => HttpResponse::InternalServerError()
+            .json(ApiResponse::<()>::err(format!("Commit error: {e}"))),
     }
 }

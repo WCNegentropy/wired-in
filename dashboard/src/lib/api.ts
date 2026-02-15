@@ -72,8 +72,33 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = 3,
+): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.status >= 500 && attempt < retries) {
+        lastError = new Error(`Server error: ${res.status}`);
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError ?? new Error('Request failed after retries');
+}
+
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
+  const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -85,7 +110,7 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
+  const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(toApi(body)),
@@ -99,7 +124,7 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
+  const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify(toApi(body)),
@@ -113,7 +138,7 @@ async function apiPut<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function apiDelete(path: string): Promise<void> {
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
+  const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
@@ -204,6 +229,77 @@ export async function loginUser(
   const data = fromApi<{ token: string; user: { id: string; email: string; name?: string } }>(json.data);
   setToken(data.token);
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// API Key Management
+// ---------------------------------------------------------------------------
+
+export interface ApiKeyEntry {
+  id: string;
+  platform: string;
+  keyName: string;
+  keyValueMasked: string;
+  hasSecret: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchApiKeys(): Promise<ApiKeyEntry[]> {
+  return apiGet<ApiKeyEntry[]>('/api/keys');
+}
+
+export async function createApiKey(data: {
+  platform: string;
+  keyName: string;
+  keyValue: string;
+  keySecret?: string;
+}): Promise<ApiKeyEntry> {
+  return apiPost<ApiKeyEntry>('/api/keys', data);
+}
+
+export async function updateApiKey(
+  id: string,
+  updates: { keyValue?: string; keySecret?: string; isActive?: boolean },
+): Promise<ApiKeyEntry> {
+  return apiPut<ApiKeyEntry>(`/api/keys/${id}`, updates);
+}
+
+export async function deleteApiKey(id: string): Promise<void> {
+  return apiDelete(`/api/keys/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// User Preferences
+// ---------------------------------------------------------------------------
+
+export interface UserPreferences {
+  theme: 'dark' | 'light';
+  defaultRefreshInterval: number;
+  notificationsEnabled: boolean;
+  compactMode: boolean;
+}
+
+export async function fetchPreferences(): Promise<UserPreferences> {
+  return apiGet<UserPreferences>('/api/user/preferences');
+}
+
+export async function updatePreferences(
+  prefs: Partial<UserPreferences>,
+): Promise<UserPreferences> {
+  return apiPut<UserPreferences>('/api/user/preferences', prefs);
+}
+
+// ---------------------------------------------------------------------------
+// Batch Tile Position Update
+// ---------------------------------------------------------------------------
+
+export async function batchUpdateTilePositions(
+  workspaceId: string,
+  positions: Array<{ tileId: string; x: number; y: number; w: number; h: number }>,
+): Promise<void> {
+  await apiPut(`/api/workspaces/${workspaceId}/tile-positions`, { positions });
 }
 
 // ---------------------------------------------------------------------------

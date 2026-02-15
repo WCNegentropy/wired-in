@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import TileGrid from './components/TileGrid';
 import AddTileModal from './components/AddTileModal';
 import AuthScreen from './components/AuthScreen';
+import ToastContainer from './components/Toast';
 import { useWiredInStore } from './store';
 import { isAuthenticated } from './lib/api';
 import { useSSE } from './hooks/useSSE';
@@ -12,12 +13,14 @@ function App() {
   const sidebarOpen = useWiredInStore((s) => s.sidebarOpen);
   const initialLoading = useWiredInStore((s) => s.initialLoading);
   const loadWorkspaces = useWiredInStore((s) => s.loadWorkspaces);
+  const loadPreferences = useWiredInStore((s) => s.loadPreferences);
   const user = useWiredInStore((s) => s.user);
   const activeWorkspaceId = useWiredInStore((s) => s.activeWorkspaceId);
 
   useEffect(() => {
     if (isAuthenticated()) {
       loadWorkspaces();
+      loadPreferences();
     } else {
       useWiredInStore.setState({ initialLoading: false });
     }
@@ -27,7 +30,12 @@ function App() {
 
   // Show auth screen if not authenticated
   if (!user && !isAuthenticated()) {
-    return <AuthScreen />;
+    return (
+      <>
+        <AuthScreen />
+        <ToastContainer />
+      </>
+    );
   }
 
   if (initialLoading) {
@@ -57,6 +65,7 @@ function App() {
         </main>
       </div>
       <AddTileModal />
+      <ToastContainer />
     </div>
   );
 }

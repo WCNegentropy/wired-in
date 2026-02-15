@@ -33,6 +33,10 @@ class NewsWorker(PlatformWorker):
 
     # ----- helpers -----------------------------------------------------------
 
+    def _resolve_api_key(self, config: dict) -> Optional[str]:
+        """Return the API key from config (per-request header) or fall back to env var."""
+        return config.get("api_key") or self._api_key
+
     @property
     def _has_api_key(self) -> bool:
         return bool(self._api_key)
@@ -114,8 +118,9 @@ class NewsWorker(PlatformWorker):
         sources: str = config.get("sources", "")
         page_size: int = min(int(config.get("page_size", 20)), 100)
 
-        if not self._has_api_key:
-            logger.info("NEWS_API_KEY not set, falling back to Google News RSS.")
+        resolved_key = self._resolve_api_key(config)
+        if not resolved_key:
+            logger.info("No API key available, falling back to Google News RSS.")
             return self._fetch_google_news(query=query, max_items=page_size)
 
         # Choose endpoint
@@ -125,7 +130,7 @@ class NewsWorker(PlatformWorker):
                 "q": query,
                 "pageSize": page_size,
                 "sortBy": config.get("sort_by", "publishedAt"),
-                "apiKey": self._api_key,
+                "apiKey": resolved_key,
             }
             if sources:
                 params["sources"] = sources
@@ -133,7 +138,7 @@ class NewsWorker(PlatformWorker):
             url = f"{_NEWSAPI_BASE}/top-headlines"
             params = {
                 "pageSize": page_size,
-                "apiKey": self._api_key,
+                "apiKey": resolved_key,
             }
             if category:
                 params["category"] = category

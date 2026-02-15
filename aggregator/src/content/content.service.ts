@@ -92,6 +92,9 @@ export class ContentService implements OnModuleInit {
       );
     }
 
+    // Deduplicate across platforms
+    allItems = this.deduplicateContent(allItems);
+
     // Sort
     allItems = this.sortItems(allItems, sort, query);
 
@@ -154,6 +157,109 @@ export class ContentService implements OnModuleInit {
         item.author.toLowerCase().includes(lowerQuery) ||
         item.platform.toLowerCase().includes(lowerQuery),
     );
+  }
+
+  /**
+   * Deduplicate content across all platforms.
+   * Identifies duplicates by normalized URL and title similarity.
+   * Keeps the item with the highest score and adds a crossPostedFrom metadata field.
+   */
+  deduplicateContent(items: ContentItem[]): ContentItem[] {
+    const normalizeUrl = (url: string): string => {
+      try {
+        const u = new URL(url);
+        // Strip common tracking params
+        ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+         'ref', 'source', 'fbclid', 'gclid'].forEach(p => u.searchParams.delete(p));
+        // Normalize: lowercase host, remove trailing slash
+        return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, '')}${u.search}`;
+      } catch {
+        return url.toLowerCase().replace(/\/+$/, '');
+      }
+    };
+
+    const wordOverlap = (a: string, b: string): number => {
+      const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+      const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+      if (wordsA.size === 0 || wordsB.size === 0) return 0;
+      let intersection = 0;
+      for (const w of wordsA) {
+        if (wordsB.has(w)) intersection++;
+      }
+      return intersection / Math.min(wordsA.size, wordsB.size);
+    };
+
+    const result: ContentItem[] = [];
+    const urlIndex = new Map<string, number>(); // normalizedUrl -> index in result
+
+    for (const item of items) {
+      const normUrl = normalizeUrl(item.url);
+      const existingIdx = urlIndex.get(normUrl);
+
+      if (existingIdx !== undefined) {
+        // URL match -- merge
+        const existing = result[existingIdx];
+        if ((item.score ?? 0) > (existing.score ?? 0)) {
+          // New item has higher score, replace but keep cross-post info
+          const crossPosted = [
+            ...(existing.metadata?.crossPostedFrom as string[] || []),
+            existing.platform,
+          ];
+          result[existingIdx] = {
+            ...item,
+            metadata: { ...item.metadata, crossPostedFrom: crossPosted },
+          };
+        } else {
+          // Existing has higher score, add cross-post info
+          const crossPosted = [
+            ...(existing.metadata?.crossPostedFrom as string[] || []),
+            item.platform,
+          ];
+          result[existingIdx] = {
+            ...existing,
+            metadata: { ...existing.metadata, crossPostedFrom: crossPosted },
+          };
+        }
+        continue;
+      }
+
+      // Check title similarity against all existing items
+      let merged = false;
+      for (let i = 0; i < result.length; i++) {
+        if (item.platform === result[i].platform) continue;
+        if (wordOverlap(item.title, result[i].title) > 0.8) {
+          const existing = result[i];
+          if ((item.score ?? 0) > (existing.score ?? 0)) {
+            const crossPosted = [
+              ...(existing.metadata?.crossPostedFrom as string[] || []),
+              existing.platform,
+            ];
+            result[i] = {
+              ...item,
+              metadata: { ...item.metadata, crossPostedFrom: crossPosted },
+            };
+          } else {
+            const crossPosted = [
+              ...(existing.metadata?.crossPostedFrom as string[] || []),
+              item.platform,
+            ];
+            result[i] = {
+              ...existing,
+              metadata: { ...existing.metadata, crossPostedFrom: crossPosted },
+            };
+          }
+          merged = true;
+          break;
+        }
+      }
+
+      if (!merged) {
+        urlIndex.set(normUrl, result.length);
+        result.push(item);
+      }
+    }
+
+    return result;
   }
 
   /**
