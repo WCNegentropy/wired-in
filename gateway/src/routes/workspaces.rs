@@ -4,16 +4,21 @@ use log::info;
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::middleware::AuthenticatedUser;
 use crate::models::{ApiResponse, CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace};
 use crate::state::AppState;
 use super::helpers::tile_from_row;
 
 /// GET /api/workspaces
 #[get("/workspaces")]
-pub async fn list_workspaces(state: web::Data<AppState>) -> HttpResponse {
+pub async fn list_workspaces(
+    state: web::Data<AppState>,
+    user: AuthenticatedUser,
+) -> HttpResponse {
     let rows = sqlx::query(
-        "SELECT id, name, description, created_at, updated_at FROM workspaces ORDER BY created_at DESC",
+        "SELECT id, name, description, created_at, updated_at FROM workspaces WHERE user_id = $1 ORDER BY created_at DESC",
     )
+    .bind(user.user_id)
     .fetch_all(&state.db)
     .await;
 
@@ -30,7 +35,7 @@ pub async fn list_workspaces(state: web::Data<AppState>) -> HttpResponse {
                     updated_at: r.get("updated_at"),
                 })
                 .collect();
-            info!("Listing {} workspaces", workspaces.len());
+            info!("Listing {} workspaces for user {}", workspaces.len(), user.user_id);
             HttpResponse::Ok().json(ApiResponse::ok(workspaces))
         }
         Err(e) => {
@@ -44,17 +49,19 @@ pub async fn list_workspaces(state: web::Data<AppState>) -> HttpResponse {
 #[post("/workspaces")]
 pub async fn create_workspace(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     body: web::Json<CreateWorkspaceRequest>,
 ) -> HttpResponse {
     let id = Uuid::new_v4();
     let now = Utc::now();
 
     let result = sqlx::query(
-        "INSERT INTO workspaces (id, name, description, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO workspaces (id, name, description, user_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(id)
     .bind(&body.name)
     .bind(&body.description)
+    .bind(user.user_id)
     .bind(now)
     .bind(now)
     .execute(&state.db)
@@ -62,7 +69,7 @@ pub async fn create_workspace(
 
     match result {
         Ok(_) => {
-            info!("Creating workspace: {} ({})", body.name, id);
+            info!("Creating workspace: {} ({}) for user {}", body.name, id, user.user_id);
             let workspace = Workspace {
                 id,
                 name: body.name.clone(),
@@ -84,14 +91,16 @@ pub async fn create_workspace(
 #[get("/workspaces/{id}")]
 pub async fn get_workspace(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let id = path.into_inner();
 
     let ws_row = sqlx::query(
-        "SELECT id, name, description, created_at, updated_at FROM workspaces WHERE id = $1",
+        "SELECT id, name, description, created_at, updated_at FROM workspaces WHERE id = $1 AND user_id = $2",
     )
     .bind(id)
+    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await;
 
@@ -137,6 +146,7 @@ pub async fn get_workspace(
 #[put("/workspaces/{id}")]
 pub async fn update_workspace(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
     body: web::Json<UpdateWorkspaceRequest>,
 ) -> HttpResponse {
@@ -148,13 +158,14 @@ pub async fn update_workspace(
            SET name = COALESCE($2, name),
                description = COALESCE($3, description),
                updated_at = $4
-           WHERE id = $1
+           WHERE id = $1 AND user_id = $5
            RETURNING id, name, description, created_at, updated_at"#,
     )
     .bind(id)
     .bind(&body.name)
     .bind(&body.description)
     .bind(now)
+    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await;
 
@@ -182,12 +193,14 @@ pub async fn update_workspace(
 #[delete("/workspaces/{id}")]
 pub async fn delete_workspace(
     state: web::Data<AppState>,
+    user: AuthenticatedUser,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let id = path.into_inner();
 
-    let result = sqlx::query("DELETE FROM workspaces WHERE id = $1")
+    let result = sqlx::query("DELETE FROM workspaces WHERE id = $1 AND user_id = $2")
         .bind(id)
+        .bind(user.user_id)
         .execute(&state.db)
         .await;
 

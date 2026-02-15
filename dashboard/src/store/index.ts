@@ -1,40 +1,6 @@
 import { create } from 'zustand';
 import type { Workspace, Tile, Platform, ContentItem } from '../types';
-
-// Generate unique IDs
-const uid = () => crypto.randomUUID();
-
-// Default workspace with example tiles
-const defaultWorkspace: Workspace = {
-  id: uid(),
-  name: 'My Feed',
-  description: 'Default workspace',
-  tiles: [
-    {
-      id: uid(),
-      platform: 'reddit',
-      config: { subreddit: 'technology', sort: 'hot', maxItems: 10 },
-      position: { x: 0, y: 0, w: 4, h: 3 },
-      refreshIntervalSecs: 300,
-    },
-    {
-      id: uid(),
-      platform: 'news',
-      config: { newsQuery: 'technology', maxItems: 10 },
-      position: { x: 4, y: 0, w: 4, h: 3 },
-      refreshIntervalSecs: 600,
-    },
-    {
-      id: uid(),
-      platform: 'youtube',
-      config: { query: 'programming tutorials', maxItems: 8 },
-      position: { x: 8, y: 0, w: 4, h: 3 },
-      refreshIntervalSecs: 900,
-    },
-  ],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
+import * as api from '../lib/api';
 
 interface WiredInState {
   // Workspaces
@@ -42,7 +8,7 @@ interface WiredInState {
   activeWorkspaceId: string | null;
 
   // Content cache
-  tileContent: Record<string, ContentItem[]>; // tileId -> content
+  tileContent: Record<string, ContentItem[]>;
   tileLoading: Record<string, boolean>;
 
   // UI state
@@ -51,14 +17,21 @@ interface WiredInState {
   editingTileId: string | null;
   globalSearch: string;
 
-  // Actions
-  setActiveWorkspace: (id: string) => void;
-  addWorkspace: (name: string, description: string) => void;
-  removeWorkspace: (id: string) => void;
+  // Loading
+  initialLoading: boolean;
 
-  addTile: (workspaceId: string, platform: Platform, config: Tile['config']) => void;
-  updateTile: (tileId: string, updates: Partial<Tile>) => void;
-  removeTile: (tileId: string) => void;
+  // Auth
+  user: { id: string; email: string; name?: string } | null;
+
+  // Actions
+  loadWorkspaces: () => Promise<void>;
+  setActiveWorkspace: (id: string) => void;
+  addWorkspace: (name: string, description: string) => Promise<void>;
+  removeWorkspace: (id: string) => Promise<void>;
+
+  addTile: (workspaceId: string, platform: Platform, config: Tile['config']) => Promise<void>;
+  updateTile: (tileId: string, updates: Partial<Tile>) => Promise<void>;
+  removeTile: (tileId: string) => Promise<void>;
   updateTilePositions: (layouts: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
 
   setTileContent: (tileId: string, content: ContentItem[]) => void;
@@ -68,69 +41,101 @@ interface WiredInState {
   setAddTileModalOpen: (open: boolean) => void;
   setEditingTileId: (id: string | null) => void;
   setGlobalSearch: (search: string) => void;
+
+  // Auth actions
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, name?: string) => Promise<void>;
+  logout: () => void;
 }
 
-export const useWiredInStore = create<WiredInState>((set) => ({
-  workspaces: [defaultWorkspace],
-  activeWorkspaceId: defaultWorkspace.id,
+export const useWiredInStore = create<WiredInState>((set, get) => ({
+  workspaces: [],
+  activeWorkspaceId: null,
   tileContent: {},
   tileLoading: {},
   sidebarOpen: true,
   addTileModalOpen: false,
   editingTileId: null,
   globalSearch: '',
+  initialLoading: true,
+  user: null,
+
+  loadWorkspaces: async () => {
+    try {
+      const workspaces = await api.fetchWorkspaces();
+      // Load tiles for each workspace
+      const workspacesWithTiles = await Promise.all(
+        workspaces.map(async (ws) => {
+          try {
+            const tiles = await api.fetchTiles(ws.id);
+            return { ...ws, tiles };
+          } catch {
+            return { ...ws, tiles: ws.tiles || [] };
+          }
+        }),
+      );
+      set({
+        workspaces: workspacesWithTiles,
+        activeWorkspaceId: workspacesWithTiles[0]?.id ?? null,
+        initialLoading: false,
+      });
+    } catch {
+      set({ initialLoading: false });
+    }
+  },
 
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
-  addWorkspace: (name, description) => {
-    const workspace: Workspace = {
-      id: uid(),
-      name,
-      description,
-      tiles: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    set((s) => ({ workspaces: [...s.workspaces, workspace], activeWorkspaceId: workspace.id }));
+  addWorkspace: async (name, description) => {
+    const workspace = await api.createWorkspace(name, description);
+    set((s) => ({
+      workspaces: [...s.workspaces, { ...workspace, tiles: workspace.tiles || [] }],
+      activeWorkspaceId: workspace.id,
+    }));
   },
 
-  removeWorkspace: (id) =>
+  removeWorkspace: async (id) => {
+    await api.deleteWorkspace(id);
     set((s) => ({
       workspaces: s.workspaces.filter((w) => w.id !== id),
-      activeWorkspaceId: s.activeWorkspaceId === id ? s.workspaces[0]?.id ?? null : s.activeWorkspaceId,
-    })),
+      activeWorkspaceId: s.activeWorkspaceId === id ? s.workspaces.find((w) => w.id !== id)?.id ?? null : s.activeWorkspaceId,
+    }));
+  },
 
-  addTile: (workspaceId, platform, config) => {
-    const tile: Tile = {
-      id: uid(),
+  addTile: async (workspaceId, platform, config) => {
+    const tile = await api.createTile(workspaceId, {
       platform,
       config: { ...config, maxItems: config.maxItems ?? 10 },
-      position: { x: 0, y: Infinity, w: 4, h: 3 },
+      position: { x: 0, y: 0, w: 4, h: 3 },
       refreshIntervalSecs: 300,
-    };
+    });
     set((s) => ({
       workspaces: s.workspaces.map((w) =>
-        w.id === workspaceId ? { ...w, tiles: [...w.tiles, tile], updatedAt: new Date().toISOString() } : w
+        w.id === workspaceId ? { ...w, tiles: [...w.tiles, tile], updatedAt: new Date().toISOString() } : w,
       ),
       addTileModalOpen: false,
     }));
   },
 
-  updateTile: (tileId, updates) =>
+  updateTile: async (tileId, updates) => {
+    const tile = await api.updateTile(tileId, updates);
     set((s) => ({
       workspaces: s.workspaces.map((w) => ({
         ...w,
-        tiles: w.tiles.map((t) => (t.id === tileId ? { ...t, ...updates } : t)),
+        tiles: w.tiles.map((t) => (t.id === tileId ? { ...t, ...tile } : t)),
       })),
-    })),
+    }));
+  },
 
-  removeTile: (tileId) =>
+  removeTile: async (tileId) => {
+    await api.deleteTile(tileId);
     set((s) => ({
       workspaces: s.workspaces.map((w) => ({
         ...w,
         tiles: w.tiles.filter((t) => t.id !== tileId),
       })),
-    })),
+    }));
+  },
 
   updateTilePositions: (layouts) =>
     set((s) => ({
@@ -143,7 +148,7 @@ export const useWiredInStore = create<WiredInState>((set) => ({
                 return layout ? { ...t, position: { x: layout.x, y: layout.y, w: layout.w, h: layout.h } } : t;
               }),
             }
-          : w
+          : w,
       ),
     })),
 
@@ -157,4 +162,22 @@ export const useWiredInStore = create<WiredInState>((set) => ({
   setAddTileModalOpen: (open) => set({ addTileModalOpen: open }),
   setEditingTileId: (id) => set({ editingTileId: id }),
   setGlobalSearch: (search) => set({ globalSearch: search }),
+
+  // Auth actions
+  login: async (email, password) => {
+    const { user } = await api.loginUser(email, password);
+    set({ user });
+    await get().loadWorkspaces();
+  },
+
+  register: async (email, password, name?) => {
+    const { user } = await api.registerUser(email, password, name);
+    set({ user });
+    await get().loadWorkspaces();
+  },
+
+  logout: () => {
+    api.logout();
+    set({ user: null, workspaces: [], activeWorkspaceId: null });
+  },
 }));

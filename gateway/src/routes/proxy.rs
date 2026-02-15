@@ -15,6 +15,16 @@ pub async fn get_feeds(
     let platform = path.into_inner();
     let query_string = req.query_string();
 
+    // Check Redis cache first
+    let cache_key = format!("proxy:feeds:{}:{}", platform, query_string);
+    let mut redis = state.redis.clone();
+    if let Some(cached) = crate::cache::get_cached(&mut redis, &cache_key).await {
+        info!("Cache hit for proxy feeds/{}", platform);
+        return HttpResponse::Ok()
+            .content_type("application/json")
+            .body(cached);
+    }
+
     let url = if query_string.is_empty() {
         format!("{}/feeds/{}", state.workers_url, platform)
     } else {
@@ -27,12 +37,17 @@ pub async fn get_feeds(
         Ok(resp) => {
             let status = resp.status();
             match resp.text().await {
-                Ok(body) => HttpResponse::build(
-                    actix_web::http::StatusCode::from_u16(status.as_u16())
-                        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
-                )
-                .content_type("application/json")
-                .body(body),
+                Ok(body) => {
+                    if status.is_success() {
+                        let _ = crate::cache::set_cached(&mut redis, &cache_key, &body, 300).await;
+                    }
+                    HttpResponse::build(
+                        actix_web::http::StatusCode::from_u16(status.as_u16())
+                            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
+                    )
+                    .content_type("application/json")
+                    .body(body)
+                }
                 Err(e) => {
                     error!("Failed to read workers response body: {}", e);
                     HttpResponse::BadGateway()
@@ -57,6 +72,16 @@ pub async fn get_content(
 ) -> HttpResponse {
     let query_string = req.query_string();
 
+    // Check Redis cache first
+    let cache_key = format!("proxy:content:{}", query_string);
+    let mut redis = state.redis.clone();
+    if let Some(cached) = crate::cache::get_cached(&mut redis, &cache_key).await {
+        info!("Cache hit for proxy content");
+        return HttpResponse::Ok()
+            .content_type("application/json")
+            .body(cached);
+    }
+
     let url = if query_string.is_empty() {
         format!("{}/content", state.aggregator_url)
     } else {
@@ -69,12 +94,17 @@ pub async fn get_content(
         Ok(resp) => {
             let status = resp.status();
             match resp.text().await {
-                Ok(body) => HttpResponse::build(
-                    actix_web::http::StatusCode::from_u16(status.as_u16())
-                        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
-                )
-                .content_type("application/json")
-                .body(body),
+                Ok(body) => {
+                    if status.is_success() {
+                        let _ = crate::cache::set_cached(&mut redis, &cache_key, &body, 120).await;
+                    }
+                    HttpResponse::build(
+                        actix_web::http::StatusCode::from_u16(status.as_u16())
+                            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
+                    )
+                    .content_type("application/json")
+                    .body(body)
+                }
                 Err(e) => {
                     error!("Failed to read aggregator response body: {}", e);
                     HttpResponse::BadGateway()
@@ -100,6 +130,16 @@ pub async fn search_content(
 ) -> HttpResponse {
     let query_string = req.query_string();
 
+    // Check Redis cache first
+    let cache_key = format!("proxy:search:{}", query_string);
+    let mut redis = state.redis.clone();
+    if let Some(cached) = crate::cache::get_cached(&mut redis, &cache_key).await {
+        info!("Cache hit for proxy search");
+        return HttpResponse::Ok()
+            .content_type("application/json")
+            .body(cached);
+    }
+
     let url = if query_string.is_empty() {
         format!("{}/search", state.aggregator_url)
     } else {
@@ -112,12 +152,17 @@ pub async fn search_content(
         Ok(resp) => {
             let status = resp.status();
             match resp.text().await {
-                Ok(body) => HttpResponse::build(
-                    actix_web::http::StatusCode::from_u16(status.as_u16())
-                        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
-                )
-                .content_type("application/json")
-                .body(body),
+                Ok(body) => {
+                    if status.is_success() {
+                        let _ = crate::cache::set_cached(&mut redis, &cache_key, &body, 60).await;
+                    }
+                    HttpResponse::build(
+                        actix_web::http::StatusCode::from_u16(status.as_u16())
+                            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
+                    )
+                    .content_type("application/json")
+                    .body(body)
+                }
                 Err(e) => {
                     error!("Failed to read aggregator response body: {}", e);
                     HttpResponse::BadGateway()

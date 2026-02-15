@@ -1,9 +1,9 @@
 import { useWiredInStore } from '../store';
-import { Menu, Plus, Zap } from 'lucide-react';
+import { LogOut, Menu, Plus, Zap } from 'lucide-react';
 import SearchBar from './SearchBar';
 
 export default function Header() {
-  const { sidebarOpen, toggleSidebar, setAddTileModalOpen, workspaces, activeWorkspaceId } = useWiredInStore();
+  const { sidebarOpen, toggleSidebar, setAddTileModalOpen, workspaces, activeWorkspaceId, user, logout } = useWiredInStore();
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
   return (
@@ -28,9 +28,22 @@ export default function Header() {
       </div>
 
       <div className="header__right">
+        {user && (
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #888)', marginRight: '0.5rem' }}>
+            {user.name || user.email}
+          </span>
+        )}
         <button className="btn btn--primary header__add-btn" onClick={() => setAddTileModalOpen(true)}>
           <Plus size={16} />
           <span>Add Tile</span>
+        </button>
+        <button
+          className="header__menu-btn"
+          onClick={logout}
+          title="Logout"
+          style={{ marginLeft: '0.5rem' }}
+        >
+          <LogOut size={18} />
         </button>
       </div>
     </header>
