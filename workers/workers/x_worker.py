@@ -35,6 +35,19 @@ class XWorker(PlatformWorker):
 
     # ----- helpers -----------------------------------------------------------
 
+    def _resolve_token(self, config: dict) -> Optional[str]:
+        """Return the bearer token from config (per-request header) or fall back to env var."""
+        return config.get("api_key") or self._bearer_token
+
+    def _get_session(self, config: dict) -> requests.Session:
+        """Return a session configured with the appropriate bearer token."""
+        token = self._resolve_token(config)
+        if token and token != self._bearer_token:
+            session = requests.Session()
+            session.headers.update({"Authorization": f"Bearer {token}"})
+            return session
+        return self._session
+
     @property
     def _has_token(self) -> bool:
         return bool(self._bearer_token)
@@ -107,8 +120,10 @@ class XWorker(PlatformWorker):
             user (str): Username to fetch timeline for.
             list_id (str): X list ID to fetch tweets from.
             max_results (int): 10-100. Default 10.
+            api_key (str): Per-request bearer token from gateway.
         """
-        if not self._has_token:
+        token = self._resolve_token(config)
+        if not token:
             logger.warning("X worker: no bearer token configured, returning mock data.")
             return self._mock_feed()
 
@@ -120,11 +135,13 @@ class XWorker(PlatformWorker):
         expansions = "author_id"
         user_fields = "username"
 
+        session = self._get_session(config)
+
         # ---- user timeline ----
         if user:
             try:
                 # First resolve username -> user id
-                user_resp = self._session.get(
+                user_resp = session.get(
                     f"{_API_BASE}/users/by/username/{user}",
                     timeout=_REQUEST_TIMEOUT,
                 )
@@ -134,7 +151,7 @@ class XWorker(PlatformWorker):
                     logger.error("Could not resolve X user '%s'", user)
                     return []
 
-                resp = self._session.get(
+                resp = session.get(
                     f"{_API_BASE}/users/{user_id}/tweets",
                     params={
                         "max_results": max_results,
@@ -167,9 +184,11 @@ class XWorker(PlatformWorker):
 
         Keyword args:
             max_results (int): 10-100. Default 10.
+            api_key (str): Per-request bearer token from gateway.
         """
-        if not self._has_token:
-            logger.warning("X search requires X_BEARER_TOKEN; returning mock data.")
+        token = kwargs.get("api_key") or self._bearer_token
+        if not token:
+            logger.warning("X search requires a bearer token; returning mock data.")
             return self._mock_feed()
 
         max_results = min(max(int(kwargs.get("max_results", 10)), 10), 100)
@@ -182,8 +201,13 @@ class XWorker(PlatformWorker):
             "user.fields": "username",
         }
 
+        session = self._session
+        if token and token != self._bearer_token:
+            session = requests.Session()
+            session.headers.update({"Authorization": f"Bearer {token}"})
+
         try:
-            resp = self._session.get(
+            resp = session.get(
                 f"{_API_BASE}/tweets/search/recent",
                 params=params,
                 timeout=_REQUEST_TIMEOUT,

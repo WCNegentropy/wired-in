@@ -1,17 +1,53 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use log::{error, info};
+use sqlx::Row;
 
+use crate::middleware::AuthenticatedUser;
 use crate::models::{ApiResponse, SubscribeRequest};
+use crate::rate_limit::RateLimiter;
 use crate::state::AppState;
 
+/// Look up the user's API key for a given platform.
+/// Returns (key_value, Option<key_secret>).
+async fn lookup_api_key(
+    db: &sqlx::PgPool,
+    user_id: uuid::Uuid,
+    platform: &str,
+) -> Option<(String, Option<String>)> {
+    let row = sqlx::query(
+        "SELECT key_value, key_secret FROM api_keys WHERE user_id = $1 AND platform = $2 AND is_active = true LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(platform)
+    .fetch_optional(db)
+    .await
+    .ok()?;
+
+    row.map(|r| {
+        let key_value: String = r.get("key_value");
+        let key_secret: Option<String> = r.get("key_secret");
+        (key_value, key_secret)
+    })
+}
+
 /// GET /api/feeds/{platform}
-/// Proxy the request to the workers service.
+/// Proxy the request to the workers service, forwarding API keys if available.
 #[get("/feeds/{platform}")]
 pub async fn get_feeds(
     state: web::Data<AppState>,
     path: web::Path<String>,
     req: HttpRequest,
+    user: Option<AuthenticatedUser>,
+    limiter: web::Data<RateLimiter>,
 ) -> HttpResponse {
+    // Rate limiting for proxy endpoints
+    if let Some(ref u) = user {
+        if !limiter.check(&format!("proxy:{}", u.user_id), 30) {
+            return HttpResponse::TooManyRequests()
+                .json(ApiResponse::<()>::err("Rate limit exceeded for proxy requests"));
+        }
+    }
+
     let platform = path.into_inner();
     let query_string = req.query_string();
 
@@ -33,7 +69,19 @@ pub async fn get_feeds(
 
     info!("Proxying GET /api/feeds/{} -> {}", platform, url);
 
-    match state.http_client.get(&url).send().await {
+    // Build request, forwarding API keys if the user is authenticated
+    let mut request_builder = state.http_client.get(&url);
+
+    if let Some(ref u) = user {
+        if let Some((key_value, key_secret)) = lookup_api_key(&state.db, u.user_id, &platform).await {
+            request_builder = request_builder.header("X-Platform-Api-Key", key_value);
+            if let Some(secret) = key_secret {
+                request_builder = request_builder.header("X-Platform-Api-Secret", secret);
+            }
+        }
+    }
+
+    match request_builder.send().await {
         Ok(resp) => {
             let status = resp.status();
             match resp.text().await {
@@ -69,7 +117,16 @@ pub async fn get_feeds(
 pub async fn get_content(
     state: web::Data<AppState>,
     req: HttpRequest,
+    user: Option<AuthenticatedUser>,
+    limiter: web::Data<RateLimiter>,
 ) -> HttpResponse {
+    if let Some(ref u) = user {
+        if !limiter.check(&format!("api:{}", u.user_id), 100) {
+            return HttpResponse::TooManyRequests()
+                .json(ApiResponse::<()>::err("Rate limit exceeded"));
+        }
+    }
+
     let query_string = req.query_string();
 
     // Check Redis cache first
@@ -127,7 +184,16 @@ pub async fn get_content(
 pub async fn search_content(
     state: web::Data<AppState>,
     req: HttpRequest,
+    user: Option<AuthenticatedUser>,
+    limiter: web::Data<RateLimiter>,
 ) -> HttpResponse {
+    if let Some(ref u) = user {
+        if !limiter.check(&format!("api:{}", u.user_id), 100) {
+            return HttpResponse::TooManyRequests()
+                .json(ApiResponse::<()>::err("Rate limit exceeded"));
+        }
+    }
+
     let query_string = req.query_string();
 
     // Check Redis cache first

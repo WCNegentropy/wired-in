@@ -1,8 +1,10 @@
+pub mod api_keys;
 pub mod auth;
 pub mod helpers;
 pub mod proxy;
 pub mod stream;
 pub mod tiles;
+pub mod user;
 pub mod workspaces;
 
 use actix_web::web;
@@ -28,12 +30,21 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(workspaces::get_workspace)
             .service(workspaces::update_workspace)
             .service(workspaces::delete_workspace)
+            .service(workspaces::batch_update_tile_positions)
             // Tile configuration
             .service(tiles::list_tiles)
             .service(tiles::create_tile)
             .service(tiles::update_tile)
             .service(tiles::delete_tile)
             // SSE streaming
-            .service(stream::event_stream),
+            .service(stream::event_stream)
+            // API key management
+            .service(api_keys::list_keys)
+            .service(api_keys::create_key)
+            .service(api_keys::update_key)
+            .service(api_keys::delete_key)
+            // User preferences
+            .service(user::get_preferences)
+            .service(user::update_preferences),
     );
 }

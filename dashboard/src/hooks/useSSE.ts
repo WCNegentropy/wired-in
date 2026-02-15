@@ -9,8 +9,23 @@ export function useSSE(workspaceId: string | null) {
   useEffect(() => {
     if (!workspaceId) return;
 
+    const setConnectionStatus = useWiredInStore.getState().setConnectionStatus;
+    setConnectionStatus('connecting');
+
     const es = createSSEConnection(workspaceId, () => {});
     esRef.current = es;
+
+    es.onopen = () => {
+      setConnectionStatus('connected');
+    };
+
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) {
+        setConnectionStatus('disconnected');
+      } else {
+        setConnectionStatus('connecting');
+      }
+    };
 
     const handleContent = (event: Event) => {
       const messageEvent = event as MessageEvent;
@@ -40,6 +55,7 @@ export function useSSE(workspaceId: string | null) {
       es.removeEventListener('content', handleContent);
       es.close();
       esRef.current = null;
+      setConnectionStatus('disconnected');
     };
   }, [workspaceId]);
 }

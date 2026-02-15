@@ -14,6 +14,17 @@ logger = logging.getLogger(__name__)
 feeds_bp = Blueprint("feeds", __name__, url_prefix="/api/feeds")
 
 
+def _inject_api_key(config: dict) -> dict:
+    """If the gateway forwarded an API key via headers, inject it into config."""
+    api_key = request.headers.get("X-Platform-Api-Key")
+    api_secret = request.headers.get("X-Platform-Api-Secret")
+    if api_key:
+        config["api_key"] = api_key
+    if api_secret:
+        config["api_secret"] = api_secret
+    return config
+
+
 @feeds_bp.route("/platforms", methods=["GET"])
 def list_platforms():
     """Return a list of available platform adapters and their health status."""
@@ -46,6 +57,7 @@ def fetch_feed(platform: str):
         }), 404
 
     config = dict(request.args)
+    config = _inject_api_key(config)
 
     try:
         items = worker.fetch_feed(config)
@@ -85,6 +97,14 @@ def search_platform(platform: str):
 
     # Pass remaining query params as kwargs
     kwargs = {k: v for k, v in request.args.items() if k != "q"}
+
+    # Inject API key from headers if present
+    api_key = request.headers.get("X-Platform-Api-Key")
+    api_secret = request.headers.get("X-Platform-Api-Secret")
+    if api_key:
+        kwargs["api_key"] = api_key
+    if api_secret:
+        kwargs["api_secret"] = api_secret
 
     try:
         items = worker.search(query, **kwargs)

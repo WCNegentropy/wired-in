@@ -94,6 +94,24 @@ pub enum Platform {
 }
 
 // ---------------------------------------------------------------------------
+// Batch tile position update
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BatchTilePositionRequest {
+    pub positions: Vec<TilePositionEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TilePositionEntry {
+    pub tile_id: Uuid,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+// ---------------------------------------------------------------------------
 // SSE content events
 // ---------------------------------------------------------------------------
 
@@ -142,6 +160,16 @@ pub struct HealthResponse {
     pub timestamp: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AggregatedHealthResponse {
+    pub gateway: String,
+    pub aggregator: String,
+    pub workers: String,
+    pub db: String,
+    pub redis: String,
+    pub timestamp: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SubscribeRequest {
     pub callback_url: Option<String>,
@@ -175,4 +203,77 @@ pub struct UserInfo {
     pub id: Uuid,
     pub email: String,
     pub name: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// API Keys
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateApiKeyRequest {
+    pub platform: String,
+    #[serde(default = "default_key_name")]
+    pub key_name: String,
+    pub key_value: String,
+    pub key_secret: Option<String>,
+}
+
+fn default_key_name() -> String {
+    "default".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpdateApiKeyRequest {
+    pub key_value: Option<String>,
+    pub key_secret: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ApiKeyResponse {
+    pub id: Uuid,
+    pub platform: String,
+    pub key_name: String,
+    pub key_value_masked: String,
+    pub has_secret: bool,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// User Preferences
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserPreferences {
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_refresh")]
+    pub default_refresh_interval: u64,
+    #[serde(default = "default_true")]
+    pub notifications_enabled: bool,
+    #[serde(default)]
+    pub compact_mode: bool,
+}
+
+fn default_theme() -> String {
+    "dark".to_string()
+}
+fn default_refresh() -> u64 {
+    300
+}
+fn default_true() -> bool {
+    true
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            default_refresh_interval: default_refresh(),
+            notifications_enabled: default_true(),
+            compact_mode: false,
+        }
+    }
 }

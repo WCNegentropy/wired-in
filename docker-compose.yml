@@ -13,6 +13,8 @@ services:
       - AGGREGATOR_URL=http://aggregator:4000
       - WORKERS_URL=http://workers:8000
       - RUST_LOG=info
+      - JWT_SECRET=dev-secret-change-me  # CHANGE THIS IN PRODUCTION
+      - CORS_ALLOWED_ORIGINS=  # Comma-separated origins; empty = permissive (dev only)
     depends_on:
       - db
       - redis
