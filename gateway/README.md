@@ -26,8 +26,8 @@ API gateway and reverse proxy for the Wired-In platform. Routes dashboard reques
 | `GET` | `/api/workspaces/{id}` | Get workspace |
 | `PUT` | `/api/workspaces/{id}` | Update workspace |
 | `DELETE` | `/api/workspaces/{id}` | Delete workspace |
-| `GET` | `/api/tiles` | List tiles for a workspace |
-| `POST` | `/api/tiles` | Create tile |
+| `GET` | `/api/workspaces/{workspace_id}/tiles` | List tiles for a workspace |
+| `POST` | `/api/workspaces/{workspace_id}/tiles` | Create tile |
 | `PUT` | `/api/tiles/{id}` | Update tile |
 | `DELETE` | `/api/tiles/{id}` | Delete tile |
 | `GET` | `/api/stream` | SSE event stream (`?workspace_id=xxx`) |
