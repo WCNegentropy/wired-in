@@ -1,0 +1,15 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: node:20
+    steps:
+      - checkout
+      - run: make build
+      - run: make test
+
+workflows:
+  main:
+    jobs:
+      - build
