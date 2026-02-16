@@ -1,5 +1,6 @@
 mod auth;
 mod cache;
+pub mod crypto;
 mod db;
 mod middleware;
 mod models;

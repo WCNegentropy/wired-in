@@ -7,6 +7,9 @@ import AuthScreen from './components/AuthScreen';
 import OAuthCallback from './components/OAuthCallback';
 import SharedView from './components/SharedView';
 import BookmarksPanel from './components/BookmarksPanel';
+import SavedSearchesModal from './components/SavedSearchesModal';
+import AnalyticsPanel from './components/AnalyticsPanel';
+import ImportExportModal from './components/ImportExportModal';
 import ToastContainer from './components/Toast';
 import { useWiredInStore } from './store';
 import { isAuthenticated } from './lib/api';
@@ -41,6 +44,7 @@ function App() {
   const loadWorkspaces = useWiredInStore((s) => s.loadWorkspaces);
   const loadPreferences = useWiredInStore((s) => s.loadPreferences);
   const loadBookmarks = useWiredInStore((s) => s.loadBookmarks);
+  const loadSavedSearches = useWiredInStore((s) => s.loadSavedSearches);
   const user = useWiredInStore((s) => s.user);
   const activeWorkspaceId = useWiredInStore((s) => s.activeWorkspaceId);
 
@@ -49,6 +53,7 @@ function App() {
       loadWorkspaces();
       loadPreferences();
       loadBookmarks();
+      loadSavedSearches();
     } else if (route.type === 'app') {
       useWiredInStore.setState({ initialLoading: false });
     }
@@ -114,6 +119,9 @@ function App() {
       </div>
       <AddTileModal />
       <BookmarksPanel />
+      <SavedSearchesModal />
+      <AnalyticsPanel />
+      <ImportExportModal />
       <ToastContainer />
     </div>
   );

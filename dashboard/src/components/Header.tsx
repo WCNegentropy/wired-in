@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWiredInStore } from '../store';
-import { LogOut, Menu, Plus, Zap, Sun, Moon, Key, Columns2, MoreVertical, Bookmark } from 'lucide-react';
+import { LogOut, Menu, Plus, Zap, Sun, Moon, Key, Columns2, MoreVertical, Bookmark, Search, BarChart3, Download } from 'lucide-react';
 import SearchBar from './SearchBar';
 import ApiKeySettings from './ApiKeySettings';
 
@@ -27,6 +27,9 @@ export default function Header() {
   const [showSettings, setShowSettings] = useState(false);
   const [showOverflow, setShowOverflow] = useState(false);
   const setBookmarksPanelOpen = useWiredInStore((s) => s.setBookmarksPanelOpen);
+  const setSavedSearchesModalOpen = useWiredInStore((s) => s.setSavedSearchesModalOpen);
+  const setAnalyticsPanelOpen = useWiredInStore((s) => s.setAnalyticsPanelOpen);
+  const setImportExportModalOpen = useWiredInStore((s) => s.setImportExportModalOpen);
 
   const toggleTheme = () => {
     const newTheme = preferences.theme === 'dark' ? 'light' : 'dark';
@@ -89,6 +92,27 @@ export default function Header() {
           </button>
           <button
             className="header__menu-btn"
+            onClick={() => setSavedSearchesModalOpen(true)}
+            title="Saved Searches"
+          >
+            <Search size={18} />
+          </button>
+          <button
+            className="header__menu-btn"
+            onClick={() => setAnalyticsPanelOpen(true)}
+            title="Analytics"
+          >
+            <BarChart3 size={18} />
+          </button>
+          <button
+            className="header__menu-btn"
+            onClick={() => setImportExportModalOpen(true)}
+            title="Import/Export"
+          >
+            <Download size={18} />
+          </button>
+          <button
+            className="header__menu-btn"
             onClick={() => setShowSettings(true)}
             title="API Key Settings"
           >
@@ -125,6 +149,15 @@ export default function Header() {
                 </button>
                 <button onClick={() => { setBookmarksPanelOpen(true); setShowOverflow(false); }}>
                   <Bookmark size={16} /> Bookmarks
+                </button>
+                <button onClick={() => { setSavedSearchesModalOpen(true); setShowOverflow(false); }}>
+                  <Search size={16} /> Saved Searches
+                </button>
+                <button onClick={() => { setAnalyticsPanelOpen(true); setShowOverflow(false); }}>
+                  <BarChart3 size={16} /> Analytics
+                </button>
+                <button onClick={() => { setImportExportModalOpen(true); setShowOverflow(false); }}>
+                  <Download size={16} /> Import/Export
                 </button>
                 <button onClick={() => { toggleTheme(); setShowOverflow(false); }}>
                   {preferences.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}

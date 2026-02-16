@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Workspace, Tile, Platform, ContentItem } from '../types';
+import type { Workspace, Tile, Platform, ContentItem, WorkspaceAnalytics } from '../types';
 import type { ToastData } from '../components/Toast';
 import type { UserPreferences } from '../lib/api';
 import * as api from '../lib/api';
@@ -90,6 +90,26 @@ interface WiredInState {
   removeBookmark: (id: string) => Promise<void>;
   setBookmarksPanelOpen: (open: boolean) => void;
   isBookmarked: (contentId: string) => boolean;
+
+  // Saved Searches (Track A)
+  savedSearches: api.SavedSearchEntry[];
+  savedSearchesModalOpen: boolean;
+  setSavedSearchesModalOpen: (open: boolean) => void;
+  loadSavedSearches: () => Promise<void>;
+  addSavedSearch: (data: { name: string; query: string; platforms?: string[]; notify?: boolean }) => Promise<void>;
+  removeSavedSearch: (id: string) => Promise<void>;
+  notifications: Array<{ id: string; searchName: string; title: string; url: string; platform: string; timestamp: string }>;
+  notificationCount: number;
+
+  // Analytics (Track B)
+  analyticsData: WorkspaceAnalytics | null;
+  analyticsPanelOpen: boolean;
+  setAnalyticsPanelOpen: (open: boolean) => void;
+  loadAnalytics: (workspaceId: string, period?: '7' | '30' | 'all') => Promise<void>;
+
+  // Import/Export (Track D)
+  importExportModalOpen: boolean;
+  setImportExportModalOpen: (open: boolean) => void;
 }
 
 export const useWiredInStore = create<WiredInState>((set, get) => ({
@@ -415,4 +435,67 @@ export const useWiredInStore = create<WiredInState>((set, get) => ({
   setBookmarksPanelOpen: (open) => set({ bookmarksPanelOpen: open }),
 
   isBookmarked: (contentId) => get().bookmarkedContentIds.has(contentId),
+
+  // Saved Searches (Track A)
+  savedSearches: [],
+  savedSearchesModalOpen: false,
+  setSavedSearchesModalOpen: (open) => set({ savedSearchesModalOpen: open }),
+  notifications: [],
+  notificationCount: 0,
+
+  loadSavedSearches: async () => {
+    try {
+      const searches = await api.fetchSavedSearches();
+      set({ savedSearches: searches });
+    } catch {
+      // Endpoint might not exist yet
+    }
+  },
+
+  addSavedSearch: async (data) => {
+    try {
+      const search = await api.createSavedSearch(data);
+      set((s) => ({ savedSearches: [search, ...s.savedSearches] }));
+      get().addToast(`Saved search "${data.name}" created`, 'success');
+    } catch (err) {
+      get().addToast(
+        `Failed to create saved search: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error',
+      );
+    }
+  },
+
+  removeSavedSearch: async (id) => {
+    try {
+      await api.deleteSavedSearch(id);
+      set((s) => ({ savedSearches: s.savedSearches.filter((ss) => ss.id !== id) }));
+      get().addToast('Saved search removed', 'success');
+    } catch (err) {
+      get().addToast(
+        `Failed to remove saved search: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error',
+      );
+    }
+  },
+
+  // Analytics (Track B)
+  analyticsData: null,
+  analyticsPanelOpen: false,
+  setAnalyticsPanelOpen: (open) => set({ analyticsPanelOpen: open }),
+
+  loadAnalytics: async (workspaceId, period = '30') => {
+    try {
+      const data = await api.fetchWorkspaceAnalytics(workspaceId, period);
+      set({ analyticsData: data });
+    } catch (err) {
+      get().addToast(
+        `Failed to load analytics: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error',
+      );
+    }
+  },
+
+  // Import/Export (Track D)
+  importExportModalOpen: false,
+  setImportExportModalOpen: (open) => set({ importExportModalOpen: open }),
 }));

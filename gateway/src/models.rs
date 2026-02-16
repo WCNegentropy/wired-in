@@ -367,3 +367,122 @@ pub struct SharedWorkspaceResponse {
     pub workspace: Workspace,
     pub owner: String,
 }
+
+// ---------------------------------------------------------------------------
+// Saved Searches (Track A)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateSavedSearchRequest {
+    pub name: String,
+    pub query: String,
+    #[serde(default)]
+    pub platforms: Vec<String>,
+    #[serde(default = "default_true")]
+    pub notify: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpdateSavedSearchRequest {
+    pub name: Option<String>,
+    pub query: Option<String>,
+    pub platforms: Option<Vec<String>>,
+    pub notify: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedSearchResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub query: String,
+    pub platforms: Vec<String>,
+    pub notify: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Content Analytics (Track B)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TrackClickRequest {
+    pub workspace_id: Uuid,
+    pub tile_id: Option<Uuid>,
+    pub content_id: String,
+    pub platform: String,
+    pub title: Option<String>,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlatformCount {
+    pub platform: String,
+    pub count: i64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TopContentItem {
+    pub content_id: String,
+    pub title: Option<String>,
+    pub url: String,
+    pub platform: String,
+    pub click_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyClickCount {
+    pub day: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkspaceAnalytics {
+    pub workspace_id: Uuid,
+    pub total_clicks: i64,
+    pub platform_breakdown: Vec<PlatformCount>,
+    pub top_content: Vec<TopContentItem>,
+    pub daily_clicks: Vec<DailyClickCount>,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Import/Export (Track D)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportedWorkspace {
+    pub name: String,
+    pub description: Option<String>,
+    pub tiles: Vec<ExportedTile>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportedTile {
+    pub platform: Platform,
+    pub config: TileConfig,
+    pub position: TilePosition,
+    pub refresh_interval_secs: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkspaceExport {
+    pub version: String,
+    pub exported_at: DateTime<Utc>,
+    pub workspaces: Vec<ExportedWorkspace>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImportResult {
+    pub workspace_ids: Vec<Uuid>,
+    pub workspace_count: usize,
+    pub tile_count: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OpmlImportResult {
+    pub workspace_id: Uuid,
+    pub workspace_name: String,
+    pub tile_count: usize,
+}
