@@ -43,6 +43,18 @@ export interface TileConfig {
   country?: string;
   // Common
   maxItems?: number;
+  // Filters (Track C)
+  filters?: TileFilters;
+}
+
+export interface TileFilters {
+  keywords?: string[];
+  keywordsExclude?: string[];
+  regex?: string;
+  nsfwFilter?: 'hide' | 'blur' | 'show';
+  minScore?: number;
+  minComments?: number;
+  maxAge?: number; // seconds
 }
 
 export interface ContentItem {
@@ -57,7 +69,45 @@ export interface ContentItem {
   authorUrl: string;
   score?: number;
   commentCount?: number;
+  nsfw?: boolean;
   publishedAt: string;
   fetchedAt: string;
   metadata: Record<string, unknown>;
+}
+
+// Saved Searches (Track A)
+export interface SavedSearch {
+  id: string;
+  name: string;
+  query: string;
+  platforms: string[];
+  notify: boolean;
+  createdAt: string;
+}
+
+// Analytics (Track B)
+export interface WorkspaceAnalytics {
+  workspaceId: string;
+  totalClicks: number;
+  platformBreakdown: Array<{ platform: string; count: number; percentage: number }>;
+  topContent: Array<{ contentId: string; title?: string; url: string; platform: string; clickCount: number }>;
+  dailyClicks: Array<{ day: string; count: number }>;
+  periodStart: string;
+  periodEnd: string;
+}
+
+// Import/Export (Track D)
+export interface WorkspaceExport {
+  version: string;
+  exportedAt: string;
+  workspaces: Array<{
+    name: string;
+    description?: string;
+    tiles: Array<{
+      platform: Platform;
+      config: TileConfig;
+      position: TilePosition;
+      refreshIntervalSecs: number;
+    }>;
+  }>;
 }

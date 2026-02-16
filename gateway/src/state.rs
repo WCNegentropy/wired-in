@@ -1,3 +1,4 @@
+use log::warn;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
@@ -18,6 +19,10 @@ pub struct AppState {
 
     /// Redis connection manager.
     pub redis: ConnectionManager,
+
+    /// 32-byte AES-256-GCM key for encrypting API keys at rest.
+    /// `None` means encryption is disabled (keys stored in plaintext).
+    pub encryption_key: Option<[u8; 32]>,
 }
 
 impl AppState {
@@ -41,12 +46,21 @@ impl AppState {
         let db = crate::db::init_pool(&database_url).await;
         let redis = crate::cache::init_redis(&redis_url).await;
 
+        let encryption_key = std::env::var("ENCRYPTION_KEY")
+            .ok()
+            .and_then(|k| crate::crypto::parse_encryption_key(&k));
+
+        if encryption_key.is_none() {
+            warn!("ENCRYPTION_KEY not set or invalid — API keys will be stored in plaintext");
+        }
+
         Self {
             http_client,
             aggregator_url,
             workers_url,
             db,
             redis,
+            encryption_key,
         }
     }
 
@@ -69,6 +83,7 @@ impl AppState {
             workers_url,
             db,
             redis,
+            encryption_key: None,
         }
     }
 }

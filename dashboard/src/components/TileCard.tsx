@@ -1,8 +1,8 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { useWiredInStore } from '../store';
-import { fetchFeed } from '../lib/api';
+import { fetchFeed, trackClick } from '../lib/api';
 import { getMockContent } from '../lib/mockData';
-import type { Tile, ContentItem, Platform } from '../types';
+import type { Tile, ContentItem, Platform, TileFilters } from '../types';
 import {
   RefreshCw,
   Settings,
@@ -54,10 +54,66 @@ function formatNumber(n: number | undefined): string {
   return String(n);
 }
 
-function ContentItemCard({ item }: { item: ContentItem }) {
+// ---------------------------------------------------------------------------
+// Client-side content filtering (Track C)
+// ---------------------------------------------------------------------------
+
+function applyFilters(items: ContentItem[], filters: TileFilters | undefined): ContentItem[] {
+  if (!filters) return items;
+
+  return items.filter((item) => {
+    const text = `${item.title} ${item.description}`.toLowerCase();
+
+    // Keyword include filter
+    if (filters.keywords && filters.keywords.length > 0) {
+      const hasMatch = filters.keywords.some((kw) => text.includes(kw.toLowerCase()));
+      if (!hasMatch) return false;
+    }
+
+    // Keyword exclude filter
+    if (filters.keywordsExclude && filters.keywordsExclude.length > 0) {
+      const hasExcluded = filters.keywordsExclude.some((kw) => text.includes(kw.toLowerCase()));
+      if (hasExcluded) return false;
+    }
+
+    // Regex filter
+    if (filters.regex) {
+      try {
+        const re = new RegExp(filters.regex, 'i');
+        if (!re.test(`${item.title} ${item.description}`)) return false;
+      } catch {
+        // Invalid regex, skip filter
+      }
+    }
+
+    // NSFW filter
+    if (filters.nsfwFilter === 'hide' && item.nsfw) return false;
+
+    // Min score filter
+    if (filters.minScore !== undefined && (item.score ?? 0) < filters.minScore) return false;
+
+    // Min comments filter
+    if (filters.minComments !== undefined && (item.commentCount ?? 0) < filters.minComments) return false;
+
+    // Max age filter
+    if (filters.maxAge !== undefined) {
+      const ageMs = Date.now() - new Date(item.publishedAt).getTime();
+      if (ageMs > filters.maxAge * 1000) return false;
+    }
+
+    return true;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Content item card with click tracking
+// ---------------------------------------------------------------------------
+
+function ContentItemCard({ item, tileId, workspaceId }: { item: ContentItem; tileId: string; workspaceId: string | null }) {
   const meta = platformMeta[item.platform];
   const { addBookmark, removeBookmark, bookmarkedContentIds, bookmarks } = useWiredInStore();
   const isBookmarked = bookmarkedContentIds.has(item.id);
+  const nsfwBlur = item.nsfw;
 
   const handleBookmarkToggle = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -77,12 +133,27 @@ function ContentItemCard({ item }: { item: ContentItem }) {
     }
   };
 
+  const handleClick = () => {
+    // Fire-and-forget click tracking
+    if (workspaceId) {
+      trackClick({
+        workspaceId,
+        tileId,
+        contentId: item.id,
+        platform: item.platform,
+        title: item.title,
+        url: item.url,
+      }).catch(() => {});
+    }
+  };
+
   return (
     <a
-      className="content-item"
+      className={`content-item${nsfwBlur ? ' content-item--nsfw-blur' : ''}`}
       href={item.url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={handleClick}
     >
       {item.thumbnailUrl && (
         <div className="content-item__thumb">
@@ -149,11 +220,17 @@ interface TileCardProps {
 }
 
 export default function TileCard({ tile }: TileCardProps) {
-  const { tileContent, tileLoading, setTileContent, setTileLoading, removeTile, setEditingTileId } = useWiredInStore();
+  const { tileContent, tileLoading, setTileContent, setTileLoading, removeTile, setEditingTileId, activeWorkspaceId } = useWiredInStore();
   const content = tileContent[tile.id];
   const loading = tileLoading[tile.id] ?? false;
   const meta = platformMeta[tile.platform];
   const PlatformIcon = meta.icon;
+
+  // Apply client-side filters
+  const filteredContent = useMemo(
+    () => applyFilters(content ?? [], tile.config.filters),
+    [content, tile.config.filters],
+  );
 
   const loadContent = useCallback(async () => {
     setTileLoading(tile.id, true);
@@ -218,10 +295,10 @@ export default function TileCard({ tile }: TileCardProps) {
       <div className="tile-card__content">
         {loading ? (
           <LoadingSkeleton />
-        ) : content && content.length > 0 ? (
+        ) : filteredContent.length > 0 ? (
           <div className="tile-card__items">
-            {content.map((item) => (
-              <ContentItemCard key={item.id} item={item} />
+            {filteredContent.map((item) => (
+              <ContentItemCard key={item.id} item={item} tileId={tile.id} workspaceId={activeWorkspaceId} />
             ))}
           </div>
         ) : (

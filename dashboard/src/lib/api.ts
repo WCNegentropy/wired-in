@@ -550,3 +550,116 @@ export async function fetchSharedWorkspace(token: string): Promise<{ workspace: 
 export async function fetchFeedStatus(): Promise<{ platforms: Array<{ name: string; lastRefreshAt?: string; itemCount: number; error?: string }> }> {
   return apiGet('/api/feeds/status');
 }
+
+// ---------------------------------------------------------------------------
+// Saved Searches (Track A)
+// ---------------------------------------------------------------------------
+
+export interface SavedSearchEntry {
+  id: string;
+  name: string;
+  query: string;
+  platforms: string[];
+  notify: boolean;
+  createdAt: string;
+}
+
+export async function fetchSavedSearches(): Promise<SavedSearchEntry[]> {
+  return apiGet<SavedSearchEntry[]>('/api/saved-searches');
+}
+
+export async function createSavedSearch(data: {
+  name: string;
+  query: string;
+  platforms?: string[];
+  notify?: boolean;
+}): Promise<SavedSearchEntry> {
+  return apiPost<SavedSearchEntry>('/api/saved-searches', data);
+}
+
+export async function updateSavedSearch(
+  id: string,
+  updates: { name?: string; query?: string; platforms?: string[]; notify?: boolean },
+): Promise<SavedSearchEntry> {
+  return apiPut<SavedSearchEntry>(`/api/saved-searches/${id}`, updates);
+}
+
+export async function deleteSavedSearch(id: string): Promise<void> {
+  return apiDelete(`/api/saved-searches/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Content Analytics (Track B)
+// ---------------------------------------------------------------------------
+
+import type { WorkspaceAnalytics } from '../types';
+
+export async function trackClick(data: {
+  workspaceId: string;
+  tileId?: string;
+  contentId: string;
+  platform: string;
+  title?: string;
+  url: string;
+}): Promise<void> {
+  await apiPost('/api/analytics/click', data);
+}
+
+export async function fetchWorkspaceAnalytics(
+  workspaceId: string,
+  period: '7' | '30' | 'all' = '30',
+): Promise<WorkspaceAnalytics> {
+  return apiGet<WorkspaceAnalytics>(`/api/analytics/workspace/${workspaceId}?period=${period}`);
+}
+
+export async function exportAnalyticsCsv(workspaceId: string): Promise<Blob> {
+  await ensureFreshToken();
+  const res = await fetchWithRetry(
+    `${GATEWAY_URL}/api/analytics/workspace/${workspaceId}/export`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) throw new Error('Failed to export analytics');
+  return res.blob();
+}
+
+// ---------------------------------------------------------------------------
+// Import/Export (Track D)
+// ---------------------------------------------------------------------------
+
+import type { WorkspaceExport } from '../types';
+
+export async function exportWorkspace(workspaceId: string): Promise<WorkspaceExport> {
+  return apiGet<WorkspaceExport>(`/api/workspaces/${workspaceId}/export`);
+}
+
+export async function exportAllWorkspaces(): Promise<WorkspaceExport> {
+  return apiGet<WorkspaceExport>('/api/workspaces/export-all');
+}
+
+export async function importWorkspaces(
+  data: WorkspaceExport,
+): Promise<{ workspaceIds: string[]; workspaceCount: number; tileCount: number }> {
+  return apiPost('/api/workspaces/import', data);
+}
+
+export async function importOpml(
+  xmlContent: string,
+  workspaceName?: string,
+): Promise<{ workspaceId: string; workspaceName: string; tileCount: number }> {
+  await ensureFreshToken();
+  const nameParam = workspaceName ? `?name=${encodeURIComponent(workspaceName)}` : '';
+  const res = await fetchWithRetry(
+    `${GATEWAY_URL}/api/import/opml${nameParam}`,
+    {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/xml' },
+      body: xmlContent,
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `OPML import failed: ${res.status}`);
+  }
+  const json = await res.json();
+  return fromApi<{ workspaceId: string; workspaceName: string; tileCount: number }>(json.data);
+}

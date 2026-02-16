@@ -1,9 +1,12 @@
+pub mod analytics;
 pub mod api_keys;
 pub mod auth;
 pub mod bookmarks;
 pub mod helpers;
+pub mod import_export;
 pub mod oauth;
 pub mod proxy;
+pub mod saved_searches;
 pub mod shares;
 pub mod stream;
 pub mod tiles;
@@ -42,6 +45,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(workspaces::update_workspace)
             .service(workspaces::delete_workspace)
             .service(workspaces::batch_update_tile_positions)
+            // Import/Export
+            .service(import_export::export_workspace)
+            .service(import_export::export_all_workspaces)
+            .service(import_export::import_workspaces)
+            .service(import_export::import_opml)
             // Tile configuration
             .service(tiles::list_tiles)
             .service(tiles::create_tile)
@@ -63,6 +71,15 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(bookmarks::update_bookmark)
             .service(bookmarks::delete_bookmark)
             .service(bookmarks::check_bookmarked)
+            // Saved Searches
+            .service(saved_searches::list_searches)
+            .service(saved_searches::create_search)
+            .service(saved_searches::update_search)
+            .service(saved_searches::delete_search)
+            // Analytics
+            .service(analytics::track_click)
+            .service(analytics::get_workspace_analytics)
+            .service(analytics::export_analytics_csv)
             // Workspace shares
             .service(shares::create_share_link)
             .service(shares::revoke_share_link)
