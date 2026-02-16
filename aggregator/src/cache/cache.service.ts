@@ -34,6 +34,16 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     await this.redis.del(key);
   }
 
+  /**
+   * Attempt to set a key only if it does not already exist (SETNX).
+   * Returns true if the key was set, false if it already existed.
+   * Useful for distributed locking.
+   */
+  async setnx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.redis.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
   async publish(channel: string, message: string): Promise<void> {
     await this.redis.publish(channel, message);
   }

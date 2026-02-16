@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWiredInStore } from '../store';
-import { LogOut, Menu, Plus, Zap, Sun, Moon, Key, Columns2 } from 'lucide-react';
+import { LogOut, Menu, Plus, Zap, Sun, Moon, Key, Columns2, MoreVertical, Bookmark } from 'lucide-react';
 import SearchBar from './SearchBar';
 import ApiKeySettings from './ApiKeySettings';
 
@@ -25,6 +25,8 @@ export default function Header() {
   const { sidebarOpen, toggleSidebar, setAddTileModalOpen, workspaces, activeWorkspaceId, user, logout, preferences, updatePreferences } = useWiredInStore();
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const [showSettings, setShowSettings] = useState(false);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const setBookmarksPanelOpen = useWiredInStore((s) => s.setBookmarksPanelOpen);
 
   const toggleTheme = () => {
     const newTheme = preferences.theme === 'dark' ? 'light' : 'dark';
@@ -59,45 +61,88 @@ export default function Header() {
       <div className="header__right">
         <ConnectionStatus />
         {user && (
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #888)', marginRight: '0.5rem' }}>
+          <span className="header__user-name">
             {user.name || user.email}
           </span>
         )}
-        <button
-          className="header__menu-btn"
-          onClick={toggleTheme}
-          title={preferences.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        >
-          {preferences.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-        <button
-          className="header__menu-btn"
-          onClick={toggleCompactMode}
-          title={preferences.compactMode ? 'Disable compact mode' : 'Enable compact mode'}
-          style={{ marginLeft: '4px' }}
-        >
-          <Columns2 size={18} />
-        </button>
-        <button
-          className="header__menu-btn"
-          onClick={() => setShowSettings(true)}
-          title="API Key Settings"
-          style={{ marginLeft: '4px' }}
-        >
-          <Key size={18} />
-        </button>
-        <button className="btn btn--primary header__add-btn" onClick={() => setAddTileModalOpen(true)}>
-          <Plus size={16} />
-          <span>Add Tile</span>
-        </button>
-        <button
-          className="header__menu-btn"
-          onClick={logout}
-          title="Logout"
-          style={{ marginLeft: '0.5rem' }}
-        >
-          <LogOut size={18} />
-        </button>
+        <div className="header__actions">
+          <button
+            className="header__menu-btn"
+            onClick={toggleTheme}
+            title={preferences.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {preferences.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            className="header__menu-btn"
+            onClick={toggleCompactMode}
+            title={preferences.compactMode ? 'Disable compact mode' : 'Enable compact mode'}
+          >
+            <Columns2 size={18} />
+          </button>
+          <button
+            className="header__menu-btn"
+            onClick={() => setBookmarksPanelOpen(true)}
+            title="Bookmarks"
+          >
+            <Bookmark size={18} />
+          </button>
+          <button
+            className="header__menu-btn"
+            onClick={() => setShowSettings(true)}
+            title="API Key Settings"
+          >
+            <Key size={18} />
+          </button>
+          <button className="btn btn--primary header__add-btn" onClick={() => setAddTileModalOpen(true)}>
+            <Plus size={16} />
+            <span>Add Tile</span>
+          </button>
+          <button
+            className="header__menu-btn"
+            onClick={logout}
+            title="Logout"
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
+
+        {/* Mobile overflow menu */}
+        <div className="header__overflow">
+          <button
+            className="header__menu-btn"
+            onClick={() => setShowOverflow(!showOverflow)}
+            title="More options"
+          >
+            <MoreVertical size={18} />
+          </button>
+          {showOverflow && (
+            <>
+              <div className="header__overflow-backdrop" onClick={() => setShowOverflow(false)} />
+              <div className="header__overflow-menu">
+                <button onClick={() => { setAddTileModalOpen(true); setShowOverflow(false); }}>
+                  <Plus size={16} /> Add Tile
+                </button>
+                <button onClick={() => { setBookmarksPanelOpen(true); setShowOverflow(false); }}>
+                  <Bookmark size={16} /> Bookmarks
+                </button>
+                <button onClick={() => { toggleTheme(); setShowOverflow(false); }}>
+                  {preferences.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                  {preferences.theme === 'dark' ? 'Light Theme' : 'Dark Theme'}
+                </button>
+                <button onClick={() => { toggleCompactMode(); setShowOverflow(false); }}>
+                  <Columns2 size={16} /> Compact Mode
+                </button>
+                <button onClick={() => { setShowSettings(true); setShowOverflow(false); }}>
+                  <Key size={16} /> API Keys
+                </button>
+                <button onClick={() => { logout(); setShowOverflow(false); }}>
+                  <LogOut size={16} /> Logout
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
       {showSettings && <ApiKeySettings onClose={() => setShowSettings(false)} />}
     </header>

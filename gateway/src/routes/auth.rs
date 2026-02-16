@@ -1,4 +1,4 @@
-use actix_web::{post, web, HttpResponse};
+use actix_web::{post, web, HttpRequest, HttpResponse};
 use log::info;
 use sqlx::Row;
 
@@ -6,6 +6,9 @@ use crate::models::{
     ApiResponse, AuthResponse, LoginRequest, RegisterRequest, UserInfo,
 };
 use crate::state::AppState;
+
+/// Grace period (in seconds) after token expiry during which refresh is allowed.
+const REFRESH_GRACE_PERIOD_SECS: i64 = 900; // 15 minutes
 
 fn jwt_secret() -> String {
     std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret-change-me".to_string())
@@ -129,6 +132,97 @@ pub async fn login(
         }
         Ok(None) => {
             HttpResponse::Unauthorized().json(ApiResponse::<()>::err("Invalid credentials"))
+        }
+        Err(e) => HttpResponse::InternalServerError()
+            .json(ApiResponse::<()>::err(format!("Database error: {e}"))),
+    }
+}
+
+/// POST /api/auth/refresh
+/// Issue a new JWT if the current token is still valid or expired within the grace period.
+#[post("/refresh")]
+pub async fn refresh_token(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+) -> HttpResponse {
+    let secret = jwt_secret();
+
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok());
+
+    let token = match auth_header {
+        Some(h) if h.starts_with("Bearer ") => &h[7..],
+        _ => {
+            return HttpResponse::Unauthorized()
+                .json(ApiResponse::<()>::err("Missing or invalid Authorization header"));
+        }
+    };
+
+    // First try normal decode (token still valid)
+    let claims = match crate::auth::decode_jwt(token, &secret) {
+        Ok(c) => c,
+        Err(_) => {
+            // Token may be expired — try decoding without expiry validation
+            match crate::auth::decode_jwt_allow_expired(token, &secret) {
+                Ok(c) => {
+                    let now = chrono::Utc::now().timestamp();
+                    // Check if within grace period
+                    if now - c.exp > REFRESH_GRACE_PERIOD_SECS {
+                        return HttpResponse::Unauthorized()
+                            .json(ApiResponse::<()>::err("Token expired beyond grace period. Please log in again."));
+                    }
+                    c
+                }
+                Err(_) => {
+                    return HttpResponse::Unauthorized()
+                        .json(ApiResponse::<()>::err("Invalid token"));
+                }
+            }
+        }
+    };
+
+    let user_id: uuid::Uuid = match claims.sub.parse() {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::Unauthorized()
+                .json(ApiResponse::<()>::err("Invalid token: bad user ID"));
+        }
+    };
+
+    // Verify user still exists
+    let row = sqlx::query("SELECT id, email, name FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await;
+
+    match row {
+        Ok(Some(row)) => {
+            let email: String = row.get("email");
+            let name: Option<String> = row.get("name");
+
+            let new_token = match crate::auth::encode_jwt(user_id, &email, &secret) {
+                Ok(t) => t,
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(ApiResponse::<()>::err(format!("Token generation failed: {e}")));
+                }
+            };
+
+            info!("Token refreshed for user: {} ({})", email, user_id);
+
+            HttpResponse::Ok().json(ApiResponse::ok(AuthResponse {
+                token: new_token,
+                user: UserInfo {
+                    id: user_id,
+                    email,
+                    name,
+                },
+            }))
+        }
+        Ok(None) => {
+            HttpResponse::Unauthorized().json(ApiResponse::<()>::err("User no longer exists"))
         }
         Err(e) => HttpResponse::InternalServerError()
             .json(ApiResponse::<()>::err(format!("Database error: {e}"))),

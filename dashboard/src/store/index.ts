@@ -44,6 +44,11 @@ interface WiredInState {
   // SSE connection status
   connectionStatus: 'connecting' | 'connected' | 'disconnected';
 
+  // Bookmarks
+  bookmarks: api.Bookmark[];
+  bookmarksPanelOpen: boolean;
+  bookmarkedContentIds: Set<string>;
+
   // Actions
   loadWorkspaces: () => Promise<void>;
   setActiveWorkspace: (id: string) => void;
@@ -78,6 +83,13 @@ interface WiredInState {
 
   // Connection status
   setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => void;
+
+  // Bookmark actions
+  loadBookmarks: () => Promise<void>;
+  addBookmark: (data: { contentId: string; platform: string; title: string; url: string; thumbnailUrl?: string; author?: string }) => Promise<void>;
+  removeBookmark: (id: string) => Promise<void>;
+  setBookmarksPanelOpen: (open: boolean) => void;
+  isBookmarked: (contentId: string) => boolean;
 }
 
 export const useWiredInStore = create<WiredInState>((set, get) => ({
@@ -99,6 +111,9 @@ export const useWiredInStore = create<WiredInState>((set, get) => ({
     compactMode: false,
   },
   connectionStatus: 'disconnected',
+  bookmarks: [],
+  bookmarksPanelOpen: false,
+  bookmarkedContentIds: new Set<string>(),
 
   loadWorkspaces: async () => {
     try {
@@ -348,4 +363,56 @@ export const useWiredInStore = create<WiredInState>((set, get) => ({
 
   // Connection status
   setConnectionStatus: (status) => set({ connectionStatus: status }),
+
+  // Bookmark actions
+  loadBookmarks: async () => {
+    try {
+      const bookmarks = await api.fetchBookmarks();
+      const ids = new Set(bookmarks.map((b) => b.contentId));
+      set({ bookmarks, bookmarkedContentIds: ids });
+    } catch {
+      // Bookmarks endpoint might not exist yet
+    }
+  },
+
+  addBookmark: async (data) => {
+    try {
+      const bookmark = await api.createBookmark(data);
+      set((s) => ({
+        bookmarks: [bookmark, ...s.bookmarks],
+        bookmarkedContentIds: new Set([...s.bookmarkedContentIds, bookmark.contentId]),
+      }));
+      get().addToast('Bookmarked', 'success');
+    } catch (err) {
+      get().addToast(
+        `Failed to bookmark: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error',
+      );
+    }
+  },
+
+  removeBookmark: async (id) => {
+    const bookmark = get().bookmarks.find((b) => b.id === id);
+    try {
+      await api.deleteBookmark(id);
+      set((s) => {
+        const newIds = new Set(s.bookmarkedContentIds);
+        if (bookmark) newIds.delete(bookmark.contentId);
+        return {
+          bookmarks: s.bookmarks.filter((b) => b.id !== id),
+          bookmarkedContentIds: newIds,
+        };
+      });
+      get().addToast('Bookmark removed', 'success');
+    } catch (err) {
+      get().addToast(
+        `Failed to remove bookmark: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error',
+      );
+    }
+  },
+
+  setBookmarksPanelOpen: (open) => set({ bookmarksPanelOpen: open }),
+
+  isBookmarked: (contentId) => get().bookmarkedContentIds.has(contentId),
 }));

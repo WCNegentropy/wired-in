@@ -1,14 +1,26 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Post, Query, forwardRef } from '@nestjs/common';
 import { FeedsService } from './feeds.service';
+import { SchedulerService } from '../scheduler/scheduler.service';
 
 @Controller('api/feeds')
 export class FeedsController {
-  constructor(private readonly feedsService: FeedsService) {}
+  constructor(
+    private readonly feedsService: FeedsService,
+    @Inject(forwardRef(() => SchedulerService))
+    private readonly schedulerService: SchedulerService,
+  ) {}
 
   @Get('platforms')
   listPlatforms() {
     return {
       platforms: this.feedsService.getAvailablePlatforms(),
+    };
+  }
+
+  @Get('status')
+  getStatus() {
+    return {
+      platforms: this.schedulerService.getRefreshStatus(),
     };
   }
 
