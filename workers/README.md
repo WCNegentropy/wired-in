@@ -31,6 +31,17 @@ Platform content adapter service for the Wired-In platform. Provides 5 fully imp
 | `GET` | `/api/feeds/<platform>` | Fetch feed (query params vary by platform) |
 | `GET` | `/api/feeds/<platform>/search?q=<query>` | Search a platform |
 
+### Per-Request API Key Headers
+
+The gateway forwards user-stored API keys to workers via HTTP headers. Workers inject these into the platform configuration before fetching:
+
+| Header | Description |
+|--------|-------------|
+| `X-Platform-Api-Key` | Platform API key (e.g., YouTube Data API key, X bearer token) |
+| `X-Platform-Api-Secret` | Platform API secret (e.g., X OAuth secret) |
+
+When present, these headers override any server-side environment variable keys, allowing per-user API credentials stored in the gateway's encrypted key store.
+
 ## Getting Started
 
 ### Prerequisites
