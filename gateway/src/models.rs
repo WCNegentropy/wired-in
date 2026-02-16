@@ -277,3 +277,93 @@ impl Default for UserPreferences {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateBookmarkRequest {
+    pub content_id: String,
+    pub platform: String,
+    pub title: String,
+    pub url: String,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpdateBookmarkRequest {
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BookmarkResponse {
+    pub id: Uuid,
+    pub content_id: String,
+    pub platform: String,
+    pub title: String,
+    pub url: String,
+    pub thumbnail_url: Option<String>,
+    pub author: Option<String>,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// OAuth
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OAuthCallbackRequest {
+    pub code: String,
+    pub state: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OAuthUrlResponse {
+    pub url: String,
+}
+
+// ---------------------------------------------------------------------------
+// Workspace Shares
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateShareRequest {
+    #[serde(default = "default_permission")]
+    pub permission: String,
+    #[serde(default)]
+    pub expires_in_hours: Option<i64>,
+}
+
+fn default_permission() -> String {
+    "view".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ShareResponse {
+    pub id: Uuid,
+    pub share_token: String,
+    pub permission: String,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ShareLinkResponse {
+    pub share_url: String,
+    pub token: String,
+    pub permission: String,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SharedWorkspaceResponse {
+    pub workspace: Workspace,
+    pub owner: String,
+}

@@ -20,7 +20,7 @@ export default function TileGrid() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
   const layouts = useMemo(() => {
-    if (!activeWorkspace) return { lg: [], md: [], sm: [] };
+    if (!activeWorkspace) return { lg: [], md: [], sm: [], xs: [] };
     const lg = activeWorkspace.tiles.map((t) => ({
       i: t.id,
       x: t.position.x,
@@ -48,7 +48,16 @@ export default function TileGrid() {
       minW: 2,
       minH: 2,
     }));
-    return { lg, md, sm };
+    const xs = activeWorkspace.tiles.map((t, idx) => ({
+      i: t.id,
+      x: 0,
+      y: idx * 3,
+      w: 2,
+      h: 3,
+      minW: 1,
+      minH: 2,
+    }));
+    return { lg, md, sm, xs };
   }, [activeWorkspace]);
 
   const handleLayoutChange = (_current: LayoutItem[], allLayouts: Record<string, LayoutItem[]>) => {
@@ -82,8 +91,8 @@ export default function TileGrid() {
       <ResponsiveGridLayout
         className="tile-grid__layout"
         layouts={layouts}
-        breakpoints={{ lg: 1200, md: 900, sm: 600 }}
-        cols={{ lg: 12, md: 8, sm: 4 }}
+        breakpoints={{ lg: 1200, md: 900, sm: 600, xs: 480 }}
+        cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
         rowHeight={120}
         draggableHandle=".tile-card__header"
         onLayoutChange={handleLayoutChange}

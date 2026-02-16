@@ -245,6 +245,42 @@ pub async fn search_content(
     }
 }
 
+/// GET /api/feeds/status
+/// Proxy the request to the aggregator's feed status endpoint.
+#[get("/feeds/status")]
+pub async fn get_feeds_status(
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let url = format!("{}/api/feeds/status", state.aggregator_url);
+
+    info!("Proxying GET /api/feeds/status -> {}", url);
+
+    match state.http_client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.text().await {
+                Ok(body) => HttpResponse::build(
+                    actix_web::http::StatusCode::from_u16(status.as_u16())
+                        .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
+                )
+                .content_type("application/json")
+                .body(body),
+                Err(e) => {
+                    error!("Failed to read aggregator response body: {}", e);
+                    HttpResponse::BadGateway()
+                        .json(ApiResponse::<()>::err(format!("Upstream read error: {e}")))
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to reach aggregator service: {}", e);
+            HttpResponse::BadGateway().json(ApiResponse::<()>::err(format!(
+                "Aggregator service unreachable: {e}"
+            )))
+        }
+    }
+}
+
 /// POST /api/feeds/{platform}/subscribe
 /// Subscribe to a platform feed via the workers service.
 #[post("/feeds/{platform}/subscribe")]

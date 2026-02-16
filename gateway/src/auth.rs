@@ -62,3 +62,19 @@ pub fn decode_jwt(
     )?;
     Ok(token_data.claims)
 }
+
+/// Decode a JWT without validating expiry — used for the refresh endpoint
+/// to allow recently-expired tokens within a grace period.
+pub fn decode_jwt_allow_expired(
+    token: &str,
+    secret: &str,
+) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::default();
+    validation.validate_exp = false;
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )?;
+    Ok(token_data.claims)
+}

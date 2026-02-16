@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 import { ContentModule } from './content/content.module';
 import { FeedsModule } from './feeds/feeds.module';
 import { CacheModule } from './cache/cache.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 import { User } from './entities/user.entity';
 import { ContentItemEntity } from './entities/content-item.entity';
 
@@ -32,6 +33,7 @@ import { ContentItemEntity } from './entities/content-item.entity';
     CacheModule,
     ContentModule,
     FeedsModule,
+    SchedulerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -60,6 +60,98 @@ function setToken(token: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// JWT helpers & token refresh
+// ---------------------------------------------------------------------------
+
+/** Decode the payload of a JWT (without verifying signature) to read claims. */
+export function decodeJwtPayload(token: string): { sub: string; email: string; exp: number; iat: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if the current token will expire within the given number of seconds. */
+function tokenExpiresWithin(seconds: number): boolean {
+  const token = getToken();
+  if (!token) return false;
+  const payload = decodeJwtPayload(token);
+  if (!payload) return false;
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp - now < seconds;
+}
+
+/** Check if the session was expired (set by refresh failure). */
+export function wasSessionExpired(): boolean {
+  return localStorage.getItem('wiredin_session_expired') === 'true';
+}
+
+/** Clear the session expired flag. */
+export function clearSessionExpired(): void {
+  localStorage.removeItem('wiredin_session_expired');
+}
+
+/** Get the email from the expired token if available. */
+export function getExpiredTokenEmail(): string | null {
+  const token = getToken();
+  if (token) {
+    const payload = decodeJwtPayload(token);
+    return payload?.email ?? null;
+  }
+  return null;
+}
+
+let refreshPromise: Promise<void> | null = null;
+
+/** Proactively refresh the JWT if it's about to expire (within 5 minutes). */
+async function ensureFreshToken(): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  if (!tokenExpiresWithin(300)) return; // 5 minutes
+
+  // Deduplicate concurrent refresh attempts
+  if (refreshPromise) {
+    await refreshPromise;
+    return;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${GATEWAY_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const data = fromApi<{ token: string; user: { id: string; email: string; name?: string } }>(json.data);
+        setToken(data.token);
+      } else {
+        // Refresh failed — if token is actually expired, force logout
+        const payload = decodeJwtPayload(token);
+        if (payload && Math.floor(Date.now() / 1000) > payload.exp) {
+          localStorage.setItem('wiredin_session_expired', 'true');
+          logout();
+          window.location.reload();
+        }
+      }
+    } catch {
+      // Network error during refresh — ignore, will retry on next API call
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  await refreshPromise;
+}
+
+// ---------------------------------------------------------------------------
 // Generic API helpers
 // ---------------------------------------------------------------------------
 
@@ -98,6 +190,7 @@ async function fetchWithRetry(
 }
 
 async function apiGet<T>(path: string): Promise<T> {
+  await ensureFreshToken();
   const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     headers: authHeaders(),
   });
@@ -110,6 +203,7 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  await ensureFreshToken();
   const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     method: 'POST',
     headers: authHeaders(),
@@ -124,6 +218,7 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  await ensureFreshToken();
   const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     method: 'PUT',
     headers: authHeaders(),
@@ -138,6 +233,7 @@ async function apiPut<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function apiDelete(path: string): Promise<void> {
+  await ensureFreshToken();
   const res = await fetchWithRetry(`${GATEWAY_URL}${path}`, {
     method: 'DELETE',
     headers: authHeaders(),
@@ -333,4 +429,124 @@ export function createSSEConnection(workspaceId: string, onMessage: (event: Mess
   const es = new EventSource(`${GATEWAY_URL}/api/stream?workspace_id=${workspaceId}`);
   es.onmessage = onMessage;
   return es;
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+export interface Bookmark {
+  id: string;
+  contentId: string;
+  platform: string;
+  title: string;
+  url: string;
+  thumbnailUrl?: string;
+  author?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export async function fetchBookmarks(platform?: string): Promise<Bookmark[]> {
+  const path = platform ? `/api/bookmarks?platform=${platform}` : '/api/bookmarks';
+  return apiGet<Bookmark[]>(path);
+}
+
+export async function createBookmark(data: {
+  contentId: string;
+  platform: string;
+  title: string;
+  url: string;
+  thumbnailUrl?: string;
+  author?: string;
+  notes?: string;
+}): Promise<Bookmark> {
+  return apiPost<Bookmark>('/api/bookmarks', data);
+}
+
+export async function updateBookmark(id: string, updates: { notes?: string }): Promise<Bookmark> {
+  return apiPut<Bookmark>(`/api/bookmarks/${id}`, updates);
+}
+
+export async function deleteBookmark(id: string): Promise<void> {
+  return apiDelete(`/api/bookmarks/${id}`);
+}
+
+export async function checkBookmarked(contentIds: string[]): Promise<Record<string, string>> {
+  const params = contentIds.map((id) => `content_id=${encodeURIComponent(id)}`).join('&');
+  return apiGet<Record<string, string>>(`/api/bookmarks/check?${params}`);
+}
+
+// ---------------------------------------------------------------------------
+// OAuth
+// ---------------------------------------------------------------------------
+
+export async function getOAuthUrl(provider: string): Promise<string> {
+  const data = await apiGet<{ url: string }>(`/api/auth/oauth/${provider}`);
+  return data.url;
+}
+
+export async function handleOAuthCallback(
+  provider: string,
+  code: string,
+  state: string,
+): Promise<{ token: string; user: { id: string; email: string; name?: string } }> {
+  const res = await fetch(`${GATEWAY_URL}/api/auth/oauth/${provider}/callback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `OAuth callback failed: ${res.status}`);
+  }
+  const json = await res.json();
+  const data = fromApi<{ token: string; user: { id: string; email: string; name?: string } }>(json.data);
+  setToken(data.token);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace Sharing
+// ---------------------------------------------------------------------------
+
+export interface ShareLink {
+  id: string;
+  shareToken: string;
+  permission: 'view' | 'edit';
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export async function createShareLink(
+  workspaceId: string,
+  options?: { permission?: 'view' | 'edit'; expiresInHours?: number },
+): Promise<{ shareUrl: string; token: string; permission: string; expiresAt?: string }> {
+  return apiPost(`/api/workspaces/${workspaceId}/share`, options ?? {});
+}
+
+export async function listShareLinks(workspaceId: string): Promise<ShareLink[]> {
+  return apiGet<ShareLink[]>(`/api/workspaces/${workspaceId}/shares`);
+}
+
+export async function revokeShareLink(workspaceId: string, shareId: string): Promise<void> {
+  return apiDelete(`/api/workspaces/${workspaceId}/share/${shareId}`);
+}
+
+export async function fetchSharedWorkspace(token: string): Promise<{ workspace: Workspace; owner: string }> {
+  const res = await fetch(`${GATEWAY_URL}/api/shared/${token}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to load shared workspace: ${res.status}`);
+  }
+  const json = await res.json();
+  return fromApi<{ workspace: Workspace; owner: string }>(json.data);
+}
+
+// ---------------------------------------------------------------------------
+// Feed Status
+// ---------------------------------------------------------------------------
+
+export async function fetchFeedStatus(): Promise<{ platforms: Array<{ name: string; lastRefreshAt?: string; itemCount: number; error?: string }> }> {
+  return apiGet('/api/feeds/status');
 }

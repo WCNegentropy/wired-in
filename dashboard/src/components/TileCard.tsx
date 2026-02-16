@@ -15,6 +15,8 @@ import {
   Rss,
   Twitter,
   Globe,
+  Bookmark,
+  BookmarkCheck,
 } from 'lucide-react';
 
 const platformMeta: Record<Platform, { label: string; color: string; icon: typeof Newspaper }> = {
@@ -54,6 +56,26 @@ function formatNumber(n: number | undefined): string {
 
 function ContentItemCard({ item }: { item: ContentItem }) {
   const meta = platformMeta[item.platform];
+  const { addBookmark, removeBookmark, bookmarkedContentIds, bookmarks } = useWiredInStore();
+  const isBookmarked = bookmarkedContentIds.has(item.id);
+
+  const handleBookmarkToggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isBookmarked) {
+      const bookmark = bookmarks.find((b) => b.contentId === item.id);
+      if (bookmark) removeBookmark(bookmark.id);
+    } else {
+      addBookmark({
+        contentId: item.id,
+        platform: item.platform,
+        title: item.title,
+        url: item.url,
+        thumbnailUrl: item.thumbnailUrl || undefined,
+        author: item.author || undefined,
+      });
+    }
+  };
 
   return (
     <a
@@ -90,6 +112,17 @@ function ContentItemCard({ item }: { item: ContentItem }) {
               Also on {(item.metadata.crossPostedFrom as string[]).join(', ')}
             </span>
           )}
+          <button
+            className="content-item__bookmark"
+            onClick={handleBookmarkToggle}
+            title={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
+          >
+            {isBookmarked ? (
+              <BookmarkCheck size={13} style={{ color: 'var(--accent-blue)' }} />
+            ) : (
+              <Bookmark size={13} />
+            )}
+          </button>
           <ExternalLink size={12} className="content-item__link-icon" />
         </div>
       </div>
