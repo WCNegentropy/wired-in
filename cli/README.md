@@ -82,6 +82,10 @@ The CLI stores configuration at `~/.wiredin/config.json`. Default values:
 | `apiKeys` | `{}` | Platform API keys |
 | `activeWorkspace` | `null` | Currently active workspace name |
 
+## Notes
+
+The CLI is a local-only tool that does not participate in the gateway's JWT authentication flow. It communicates directly with the gateway API using the configured `gatewayUrl` and manages platform API keys locally in `~/.wiredin/config.json`. For authenticated operations (workspaces, tiles, etc.), use the dashboard.
+
 ## License
 
 MIT
